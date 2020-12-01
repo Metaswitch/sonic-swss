@@ -9,18 +9,11 @@ class NextHopGroupKey
 public:
     NextHopGroupKey() = default;
 
-    /* ip_string@if_alias separated by ',' */
-    NextHopGroupKey(const std::string &nexthops)
+    NextHopGroupKey(const std::string &nexthops,
+                    const std::string& weights = "")
     {
-        auto nhv = tokenize(nexthops, NHG_DELIMITER);
-        for (const auto &nh : nhv)
-        {
-            m_nexthops.insert(nh);
-        }
-    }
+        SWSS_LOG_ENTER();
 
-    NextHopGroupKey(const std::string &nexthops, const std::string& weights)
-    {
         std::vector<std::string> nhv = tokenize(nexthops, NHG_DELIMITER);
         std::vector<std::string> wtv = tokenize(weights, NHG_DELIMITER);
 
@@ -31,11 +24,21 @@ public:
 
         for (uint32_t i = 0; i < nhv.size(); i++)
         {
-            m_nexthops.emplace(nhv[i], (uint8_t)std::stoi(wtv[i]));
+            m_nexthops.insert({nhv[i], std::stoi(wtv[i])});
         }
     }
 
-    inline const std::set<NextHopKey> &getNextHops() const
+    inline std::set<NextHopKey> getNextHops() const
+    {
+        std::set<NextHopKey> nhs;
+        for (const auto& it : m_nexthops)
+        {
+            nhs.insert(it.first);
+        }
+        return nhs;
+    }
+
+    inline const std::map<NextHopKey, uint8_t> &getNhsWithWts() const
     {
         return m_nexthops;
     }
@@ -60,19 +63,21 @@ public:
         return !(*this == o);
     }
 
-    void add(const std::string &ip, const std::string &alias)
+    void add(const std::string &ip,
+            const std::string &alias,
+            uint8_t weight = 1)
     {
-        m_nexthops.emplace(ip, alias);
+        m_nexthops.insert({NextHopKey(ip, alias), weight});
     }
 
-    void add(const std::string &nh)
+    void add(const std::string &nh, uint8_t weight = 1)
     {
-        m_nexthops.insert(nh);
+        m_nexthops.insert({nh, weight});
     }
 
-    void add(const NextHopKey &nh)
+    void add(const NextHopKey &nh, uint8_t weight = 1)
     {
-        m_nexthops.insert(nh);
+        m_nexthops.insert({nh, weight});
     }
 
     bool contains(const std::string &ip, const std::string &alias) const
@@ -93,9 +98,9 @@ public:
 
     bool contains(const NextHopGroupKey &nhs) const
     {
-        for (const auto &nh : nhs.getNextHops())
+        for (const auto &it : nhs.getNextHops())
         {
-            if (!contains(nh))
+            if (!contains(it))
             {
                 return false;
             }
@@ -105,9 +110,9 @@ public:
 
     bool hasIntfNextHop() const
     {
-        for (const auto &nh : m_nexthops)
+        for (const auto &it : m_nexthops)
         {
-            if (nh.isIntfNextHop())
+            if (it.first.isIntfNextHop())
             {
                 return true;
             }
@@ -131,6 +136,11 @@ public:
         m_nexthops.erase(nh);
     }
 
+    uint8_t getNextHopWeight(const NextHopKey& nh) const
+    {
+        return m_nexthops.at(nh);
+    }
+
     const std::string to_string() const
     {
         string nhs_str;
@@ -142,7 +152,7 @@ public:
                 nhs_str += NHG_DELIMITER;
             }
 
-            nhs_str += it->to_string();
+            nhs_str += it->first.to_string();
         }
 
         return nhs_str;
@@ -154,7 +164,7 @@ public:
     }
 
 private:
-    std::set<NextHopKey> m_nexthops;
+    std::map<NextHopKey, uint8_t> m_nexthops;
 };
 
 #endif /* SWSS_NEXTHOPGROUPKEY_H */
