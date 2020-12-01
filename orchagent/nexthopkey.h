@@ -23,6 +23,8 @@ struct NextHopKey
     NextHopKey(const IpAddress &ip, const std::string &alias) : ip_address(ip), alias(alias), vni(0), mac_address() {}
     NextHopKey(const std::string &str)
     {
+        SWSS_LOG_ENTER();
+
         if (str.find(NHG_DELIMITER) != string::npos)
         {
             std::string err = "Error converting " + str + " to NextHop";
@@ -62,6 +64,7 @@ struct NextHopKey
             throw std::invalid_argument(err);
         }
     }
+
     NextHopKey(const std::string &str, bool overlay_nh)
     {
         if (str.find(NHG_DELIMITER) != string::npos)

@@ -77,3 +77,7 @@ tests/mock_tests/tests.trs
 tests/test-suite.log
 tests/tests.log
 tests/tests.trs
+
+# IDE files #
+#############
+.vscode
