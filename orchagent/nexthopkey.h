@@ -4,6 +4,7 @@
 #include "label.h"
 #include "ipaddress.h"
 #include "tokenize.h"
+#include "intfsorch.h"
 
 #define LABELSTACK_DELIMITER '+'
 #define NH_DELIMITER '@'
@@ -18,13 +19,14 @@ struct NextHopKey
     string              alias;          // incoming interface alias
     uint32_t            vni;            // Encap VNI overlay nexthop
     MacAddress          mac_address;    // Overlay Nexthop MAC.
-    uint8_t             weight;         // NH weight for NHGs
 
     NextHopKey() = default;
-    NextHopKey(const std::string &ipstr, const std::string &alias, uint8_t weight = 1) : ip_address(ipstr), alias(alias), vni(0), mac_address(), weight(weight) {}
-    NextHopKey(const IpAddress &ip, const std::string &alias, uint8_t weight = 1) : ip_address(ip), alias(alias), vni(0), mac_address(), weight(weight) {}
-    NextHopKey(const std::string &str, uint8_t weight = 1) : weight(weight)
+    NextHopKey(const std::string &ipstr, const std::string &alias) : ip_address(ipstr), alias(alias), vni(0), mac_address() {}
+    NextHopKey(const IpAddress &ip, const std::string &alias) : ip_address(ip), alias(alias), vni(0), mac_address() {}
+    NextHopKey(const std::string &str)
     {
+        SWSS_LOG_ENTER();
+
         if (str.find(NHG_DELIMITER) != string::npos)
         {
             std::string err = "Error converting " + str + " to NextHop";
@@ -67,7 +69,8 @@ struct NextHopKey
             throw std::invalid_argument(err);
         }
     }
-    NextHopKey(const std::string &str, bool overlay_nh, uint8_t weight = 1) : weight(weight)
+
+    NextHopKey(const std::string &str, bool overlay_nh)
     {
         if (str.find(NHG_DELIMITER) != string::npos)
         {

@@ -1459,7 +1459,7 @@ class DockerVirtualChassisTopology:
                 chassis_container_name = device_info["hostname"] + "." + self.ns
 
                 port_info = config["PORT"]
-            
+
             for port, config in port_info.items():
                 if "admin_status" not in config:
                     continue
@@ -1468,13 +1468,13 @@ class DockerVirtualChassisTopology:
                     instance_to_port_status_map[chassis_container_name] = []
 
                 instance_to_port_status_map[chassis_container_name].append((port, config.get("admin_status")))
-            
+
             return instance_to_port_status_map
 
     def handle_chassis_connections(self):
         if self.oper != "create":
             return
-        
+
         instance_to_port_status_map = self.get_chassis_instance_port_statuses()
         for chassis_instance, port_statuses in instance_to_port_status_map.items():
             if chassis_instance not in self.dvss:
