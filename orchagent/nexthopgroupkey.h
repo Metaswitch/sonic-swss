@@ -2,6 +2,7 @@
 #define SWSS_NEXTHOPGROUPKEY_H
 
 #include "nexthopkey.h"
+#include "assert.h"
 
 class NextHopGroupKey
 {
@@ -22,11 +23,15 @@ public:
     {
         std::vector<std::string> nhv = tokenize(nexthops, NHG_DELIMITER);
         std::vector<std::string> wtv = tokenize(weights, NHG_DELIMITER);
+
+        if (wtv.size() != nhv.size())
+        {
+            wtv.resize(nhv.size(), "1");
+        }
+
         for (uint32_t i = 0; i < nhv.size(); i++)
         {
-            NextHopKey nh(nhv[i]);
-            nh.weight = (uint8_t)std::stoi(wtv[i]);
-            m_nexthops.insert(nh);
+            m_nexthops.emplace(nhv[i], (uint8_t)std::stoi(wtv[i]));
         }
     }
 

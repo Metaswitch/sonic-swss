@@ -1482,7 +1482,12 @@ void RouteOrch::addTempRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextH
     /* Remove next hops that are not in m_syncdNextHops */
     for (auto it = next_hop_set.begin(); it != next_hop_set.end();)
     {
-        if (!m_neighOrch->hasNextHop(*it))
+        /*
+         * Check if the IP next hop exists in NeighOrch.  The next hop may be
+         * a labeled one, which are created by RouteOrch or NhgOrch if the IP
+         * next hop exists.
+         */
+        if (!m_neighOrch->hasNextHop(it->ipKey()))
         {
             SWSS_LOG_INFO("Failed to get next hop %s for %s",
                    (*it).to_string().c_str(), ipPrefix.to_string().c_str());
@@ -1969,7 +1974,12 @@ void RouteOrch::addTempLabelRoute(LabelRouteBulkContext& ctx, const NextHopGroup
     /* Remove next hops that are not in m_syncdNextHops */
     for (auto it = next_hop_set.begin(); it != next_hop_set.end();)
     {
-        if (!m_neighOrch->hasNextHop(*it))
+        /*
+         * Check if the IP next hop exists in NeighOrch.  The next hop may be
+         * a labeled one, which are created by RouteOrch or NhgOrch if the IP
+         * next hop exists.
+         */
+        if (!m_neighOrch->hasNextHop(it->ipKey()))
         {
             SWSS_LOG_INFO("Failed to get next hop %s for %u",
                    (*it).to_string().c_str(), label);
