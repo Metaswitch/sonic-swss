@@ -78,15 +78,15 @@ static map<string, sai_switch_hardware_access_bus_t> hardware_access_map =
 
 map<string, string> gProfileMap;
 
-sai_status_t mdio_read(uint64_t platform_context, 
-  uint32_t mdio_addr, uint32_t reg_addr, 
+sai_status_t mdio_read(uint64_t platform_context,
+  uint32_t mdio_addr, uint32_t reg_addr,
   uint32_t number_of_registers, uint32_t *data)
 {
     return SAI_STATUS_NOT_IMPLEMENTED;
 }
 
-sai_status_t mdio_write(uint64_t platform_context, 
-  uint32_t mdio_addr, uint32_t reg_addr, 
+sai_status_t mdio_write(uint64_t platform_context,
+  uint32_t mdio_addr, uint32_t reg_addr,
   uint32_t number_of_registers, uint32_t *data)
 {
     return SAI_STATUS_NOT_IMPLEMENTED;
@@ -196,6 +196,7 @@ void initSaiApi()
     sai_log_set(SAI_API_NEIGHBOR,               SAI_LOG_LEVEL_NOTICE);
     sai_log_set(SAI_API_NEXT_HOP,               SAI_LOG_LEVEL_NOTICE);
     sai_log_set(SAI_API_NEXT_HOP_GROUP,         SAI_LOG_LEVEL_NOTICE);
+    sai_log_set(SAI_API_MPLS,                   SAI_LOG_LEVEL_NOTICE);
     sai_log_set(SAI_API_ROUTE,                  SAI_LOG_LEVEL_NOTICE);
     sai_log_set(SAI_API_LAG,                    SAI_LOG_LEVEL_NOTICE);
     sai_log_set(SAI_API_POLICER,                SAI_LOG_LEVEL_NOTICE);
@@ -399,8 +400,8 @@ sai_status_t initSaiPhyApi(swss::gearbox_phy_t *phy)
     {
         SWSS_LOG_ERROR("BOX: Failed to get firmware major version:%d rtn:%d", phy->phy_id, status);
         return status;
-    } 
-    else 
+    }
+    else
     {
         phy->firmware_major_version = string(attr.value.chardata);
     }

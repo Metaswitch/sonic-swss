@@ -21,9 +21,9 @@ struct NextHopKey
     uint8_t             weight;         // NH weight for NHGs
 
     NextHopKey() = default;
-    NextHopKey(const std::string &ipstr, const std::string &alias) : ip_address(ipstr), alias(alias), vni(0), mac_address() {}
-    NextHopKey(const IpAddress &ip, const std::string &alias) : ip_address(ip), alias(alias), vni(0), mac_address() {}
-    NextHopKey(const std::string &str)
+    NextHopKey(const std::string &ipstr, const std::string &alias, uint8_t weight = 1) : ip_address(ipstr), alias(alias), vni(0), mac_address(), weight(weight) {}
+    NextHopKey(const IpAddress &ip, const std::string &alias, uint8_t weight = 1) : ip_address(ip), alias(alias), vni(0), mac_address(), weight(weight) {}
+    NextHopKey(const std::string &str, uint8_t weight = 1) : weight(weight)
     {
         if (str.find(NHG_DELIMITER) != string::npos)
         {
@@ -34,16 +34,19 @@ struct NextHopKey
         std::string ip_str;
         if (label_delimiter != std::string::npos)
         {
+            SWSS_LOG_INFO("Labeled next hop");
             label_stack = LabelStack(str.substr(0, label_delimiter));
             ip_str = str.substr(label_delimiter+1);
         }
         else
         {
+            SWSS_LOG_INFO("Unlabeled next hop");
             ip_str = str;
         }
-        auto keys = tokenize(str, NH_DELIMITER);
+        auto keys = tokenize(ip_str, NH_DELIMITER);
         vni = 0;
         mac_address = MacAddress();
+
         if (keys.size() == 1)
         {
             ip_address = keys[0];
@@ -64,7 +67,7 @@ struct NextHopKey
             throw std::invalid_argument(err);
         }
     }
-    NextHopKey(const std::string &str, bool overlay_nh)
+    NextHopKey(const std::string &str, bool overlay_nh, uint8_t weight = 1) : weight(weight)
     {
         if (str.find(NHG_DELIMITER) != string::npos)
         {
@@ -119,6 +122,11 @@ struct NextHopKey
     bool isIntfNextHop() const
     {
         return (ip_address.getV4Addr() == 0);
+    }
+
+    NextHopKey ipKey() const
+    {
+        return NextHopKey(ip_address, alias);
     }
 };
 
