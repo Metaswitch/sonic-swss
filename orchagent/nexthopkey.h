@@ -1,9 +1,11 @@
 #ifndef SWSS_NEXTHOPKEY_H
 #define SWSS_NEXTHOPKEY_H
 
+#include "label.h"
 #include "ipaddress.h"
 #include "tokenize.h"
 
+#define LABELSTACK_DELIMITER '+'
 #define NH_DELIMITER '@'
 #define NHG_DELIMITER ','
 #define VRF_PREFIX "Vrf"
@@ -11,10 +13,12 @@ extern IntfsOrch *gIntfsOrch;
 
 struct NextHopKey
 {
+    LabelStack          label_stack;    // MPLS label stack
     IpAddress           ip_address;     // neighbor IP address
     string              alias;          // incoming interface alias
     uint32_t            vni;            // Encap VNI overlay nexthop
     MacAddress          mac_address;    // Overlay Nexthop MAC.
+    uint8_t             weight;         // NH weight for NHGs
 
     NextHopKey() = default;
     NextHopKey(const std::string &ipstr, const std::string &alias) : ip_address(ipstr), alias(alias), vni(0), mac_address() {}
@@ -25,6 +29,17 @@ struct NextHopKey
         {
             std::string err = "Error converting " + str + " to NextHop";
             throw std::invalid_argument(err);
+        }
+        std::size_t label_delimiter = str.find(LABELSTACK_DELIMITER);
+        std::string ip_str;
+        if (label_delimiter != std::string::npos)
+        {
+            label_stack = LabelStack(str.substr(0, label_delimiter));
+            ip_str = str.substr(label_delimiter+1);
+        }
+        else
+        {
+            ip_str = str;
         }
         auto keys = tokenize(str, NH_DELIMITER);
         vni = 0;
@@ -70,7 +85,14 @@ struct NextHopKey
 
     const std::string to_string() const
     {
-        return ip_address.to_string() + NH_DELIMITER + alias;
+        string str;
+        if (!label_stack.empty())
+        {
+            str += label_stack.to_string();
+            str += LABELSTACK_DELIMITER;
+        }
+        str += ip_address.to_string() + NH_DELIMITER + alias;
+        return str;
     }
 
     const std::string to_string(bool overlay_nh) const
@@ -81,12 +103,12 @@ struct NextHopKey
 
     bool operator<(const NextHopKey &o) const
     {
-        return tie(ip_address, alias, vni, mac_address) < tie(o.ip_address, o.alias, o.vni, o.mac_address);
+        return tie(ip_address, alias, vni, mac_address, label_stack) < tie(o.ip_address, o.alias, o.vni, o.mac_address, o.label_stack);
     }
 
     bool operator==(const NextHopKey &o) const
     {
-        return (ip_address == o.ip_address) && (alias == o.alias) && (vni == o.vni) && (mac_address == o.mac_address);
+        return (ip_address == o.ip_address) && (alias == o.alias) && (vni == o.vni) && (mac_address == o.mac_address) && (label_stack == o.label_stack);
     }
 
     bool operator!=(const NextHopKey &o) const

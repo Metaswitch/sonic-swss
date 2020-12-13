@@ -20,13 +20,28 @@ public:
     }
 
     /* ip_string|if_alias|vni|router_mac separated by ',' */
-    NextHopGroupKey(const std::string &nexthops, bool overlay_nh)
+    NextHopGroupKey(const std::string &nexthops, bool overlay_nh, const std::string& weights)
     {
         m_overlay_nexthops = true;
         auto nhv = tokenize(nexthops, NHG_DELIMITER);
-        for (const auto &nh_str : nhv)
+        auto wtv = tokenize(weights, NHG_DELIMITER);
+
+        for (uint32_t i = 0; i < nhv.size(); i++)
         {
-            auto nh = NextHopKey(nh_str, overlay_nh);
+            auto nh = NextHopKey(nhv[i], overlay_nh);
+            nh.weight = (uint8_t)std::stoi(wtv[i]);
+            m_nexthops.insert(nh);
+        }
+    }
+
+    NextHopGroupKey(const std::string &nexthops, const std::string& weights)
+    {
+        std::vector<std::string> nhv = tokenize(nexthops, NHG_DELIMITER);
+        std::vector<std::string> wtv = tokenize(weights, NHG_DELIMITER);
+        for (uint32_t i = 0; i < nhv.size(); i++)
+        {
+            NextHopKey nh(nhv[i]);
+            nh.weight = (uint8_t)std::stoi(wtv[i]);
             m_nexthops.insert(nh);
         }
     }

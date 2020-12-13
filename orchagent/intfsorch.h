@@ -41,6 +41,7 @@ public:
     void increaseRouterIntfsRefCount(const string&);
     void decreaseRouterIntfsRefCount(const string&);
 
+    bool setRouterIntfsMpls(Port &port);
     bool setRouterIntfsMtu(const Port &port);
     bool setRouterIntfsMac(const Port &port);
     bool setRouterIntfsNatZoneId(Port &port);
