@@ -58,6 +58,7 @@ static map<string, sai_hostif_trap_type_t> trap_id_map = {
     {"bgp", SAI_HOSTIF_TRAP_TYPE_BGP},
     {"dhcpv6", SAI_HOSTIF_TRAP_TYPE_DHCPV6},
     {"ospfv6", SAI_HOSTIF_TRAP_TYPE_OSPFV6},
+    {"isis", SAI_HOSTIF_TRAP_TYPE_ISIS},
     {"vrrpv6", SAI_HOSTIF_TRAP_TYPE_VRRPV6},
     {"bgpv6", SAI_HOSTIF_TRAP_TYPE_BGPV6},
     {"neigh_discovery", SAI_HOSTIF_TRAP_TYPE_IPV6_NEIGHBOR_DISCOVERY},
@@ -515,7 +516,7 @@ task_process_status CoppOrch::processCoppRule(Consumer& consumer)
                                     policer_attribs, genetlink_attribs))
         {
             return task_process_status::task_invalid_entry;
-        } 
+        }
 
         /* Set host interface trap group */
         if (m_trap_group_map.find(trap_group_name) != m_trap_group_map.end())
@@ -579,7 +580,7 @@ task_process_status CoppOrch::processCoppRule(Consumer& consumer)
                     if (sai_status != SAI_STATUS_SUCCESS)
                     {
                         SWSS_LOG_ERROR("Failed to set attribute %d on trap %" PRIx64 ""
-                                " on group %s", i.id, m_syncdTrapIds[trap_id].trap_obj, 
+                                " on group %s", i.id, m_syncdTrapIds[trap_id].trap_obj,
                                 trap_group_name.c_str());
                         task_process_status handle_status = handleSaiSetStatus(SAI_API_HOSTIF, sai_status);
                         if (handle_status != task_process_status::task_success)
@@ -597,10 +598,10 @@ task_process_status CoppOrch::processCoppRule(Consumer& consumer)
         }
         if (!genetlink_attribs.empty())
         {
-            if (m_trap_group_hostif_map.find(m_trap_group_map[trap_group_name]) != 
+            if (m_trap_group_hostif_map.find(m_trap_group_map[trap_group_name]) !=
                     m_trap_group_hostif_map.end())
             {
-                SWSS_LOG_ERROR("Genetlink hostif exists for the trap group %s", 
+                SWSS_LOG_ERROR("Genetlink hostif exists for the trap group %s",
                                trap_group_name.c_str());
                 return task_process_status::task_failed;
             }
@@ -796,7 +797,7 @@ bool CoppOrch::trapGroupProcessTrapIdChange (string trap_group_name,
             SWSS_LOG_ERROR("Failed to set traps to trap group %s", trap_group_name.c_str());
             return false;
         }
-        if (m_trap_group_hostif_map.find(m_trap_group_map[trap_group_name]) != 
+        if (m_trap_group_hostif_map.find(m_trap_group_map[trap_group_name]) !=
                                          m_trap_group_hostif_map.end())
         {
             if (!createGenetlinkHostIfTable(add_trap_ids))
@@ -815,7 +816,7 @@ bool CoppOrch::trapGroupProcessTrapIdChange (string trap_group_name,
                  * A trap ID will be present in rem_trap_id in two scenarios
                  * 1) When trap group for a trap ID is changed
                  * 2) When trap ID is completely removed
-                 * In case 1 the first call would be to add the trap ids to a different 
+                 * In case 1 the first call would be to add the trap ids to a different
                  * group. This would result in changing the mapping of trap id to trap group
                  * In case 2 the mapping will remain the same. In this case the trap
                  * object needs to be deleted
@@ -826,7 +827,7 @@ bool CoppOrch::trapGroupProcessTrapIdChange (string trap_group_name,
                                                                     m_syncdTrapIds[i].trap_obj);
                     if (sai_status != SAI_STATUS_SUCCESS)
                     {
-                        SWSS_LOG_ERROR("Failed to remove trap object %" PRId64 "", 
+                        SWSS_LOG_ERROR("Failed to remove trap object %" PRId64 "",
                                        m_syncdTrapIds[i].trap_obj);
                         task_process_status handle_status = handleSaiRemoveStatus(SAI_API_HOSTIF, sai_status);
                         if (handle_status != task_success)
@@ -1088,4 +1089,3 @@ bool CoppOrch::trapGroupUpdatePolicer (string trap_group_name,
     }
     return true;
 }
-
