@@ -21,6 +21,8 @@ extern sai_switch_api_t*           sai_switch_api;
 extern sai_object_id_t             gSwitchId;
 extern bool                        gSaiRedisLogRotate;
 
+unsigned NhgOrch::m_maxNhgCount = 0;
+
 extern void syncd_apply_view();
 /*
  * Global orch daemon variables
@@ -30,6 +32,7 @@ FdbOrch *gFdbOrch;
 IntfsOrch *gIntfsOrch;
 NeighOrch *gNeighOrch;
 RouteOrch *gRouteOrch;
+NhgOrch *gNhgOrch;
 FgNhgOrch *gFgNhgOrch;
 AclOrch *gAclOrch;
 MirrorOrch *gMirrorOrch;
@@ -38,6 +41,7 @@ BufferOrch *gBufferOrch;
 SwitchOrch *gSwitchOrch;
 Directory<Orch*> gDirectory;
 NatOrch *gNatOrch;
+MACsecOrch *gMacsecOrch;
 
 bool gIsNatSupported = false;
 
@@ -145,7 +149,14 @@ bool OrchDaemon::init()
 
     gFgNhgOrch = new FgNhgOrch(m_configDb, m_applDb, m_stateDb, fgnhg_tables, gNeighOrch, gIntfsOrch, vrf_orch);
     gDirectory.set(gFgNhgOrch);
-    gRouteOrch = new RouteOrch(m_applDb, APP_ROUTE_TABLE_NAME, gSwitchOrch, gNeighOrch, gIntfsOrch, vrf_orch, gFgNhgOrch);
+
+    const int routeorch_pri = 5;
+    vector<table_name_with_pri_t> route_tables = {
+        { APP_ROUTE_TABLE_NAME,        routeorch_pri },
+        { APP_LABEL_ROUTE_TABLE_NAME,  routeorch_pri }
+    };
+    gNhgOrch = new NhgOrch(m_applDb, {APP_NEXT_HOP_GROUP_TABLE_NAME, APP_CLASS_BASED_NEXT_HOP_GROUP_TABLE_NAME});
+    gRouteOrch = new RouteOrch(m_applDb, route_tables, gNeighOrch, gIntfsOrch, vrf_orch, gFgNhgOrch);
 
     CoppOrch  *copp_orch  = new CoppOrch(m_applDb, APP_COPP_TABLE_NAME);
     TunnelDecapOrch *tunnel_decap_orch = new TunnelDecapOrch(m_applDb, APP_TUNNEL_DECAP_TABLE_NAME);
@@ -174,7 +185,9 @@ bool OrchDaemon::init()
         CFG_WRED_PROFILE_TABLE_NAME,
         CFG_TC_TO_PRIORITY_GROUP_MAP_TABLE_NAME,
         CFG_PFC_PRIORITY_TO_PRIORITY_GROUP_MAP_TABLE_NAME,
-        CFG_PFC_PRIORITY_TO_QUEUE_MAP_TABLE_NAME
+        CFG_PFC_PRIORITY_TO_QUEUE_MAP_TABLE_NAME,
+        CFG_DSCP_TO_FC_MAP_TABLE_NAME,
+        CFG_EXP_TO_FC_MAP_TABLE_NAME
     };
     QosOrch *qos_orch = new QosOrch(m_configDb, qos_tables);
 
@@ -261,6 +274,16 @@ bool OrchDaemon::init()
     MuxStateOrch *mux_st_orch = new MuxStateOrch(m_stateDb, STATE_HW_MUX_CABLE_TABLE_NAME);
     gDirectory.set(mux_st_orch);
 
+    vector<string> macsec_app_tables = {
+        APP_MACSEC_PORT_TABLE_NAME,
+        APP_MACSEC_EGRESS_SC_TABLE_NAME,
+        APP_MACSEC_INGRESS_SC_TABLE_NAME,
+        APP_MACSEC_EGRESS_SA_TABLE_NAME,
+        APP_MACSEC_INGRESS_SA_TABLE_NAME,
+    };
+
+    gMacsecOrch = new MACsecOrch(m_applDb, m_stateDb, macsec_app_tables, gPortsOrch);
+
     /*
      * The order of the orch list is important for state restore of warm start and
      * the queued processing in m_toSync map after gPortsOrch->allPortsReady() is set.
@@ -269,7 +292,7 @@ bool OrchDaemon::init()
      * when iterating ConsumerMap. This is ensured implicitly by the order of keys in ordered map.
      * For cases when Orch has to process tables in specific order, like PortsOrch during warm start, it has to override Orch::doTask()
      */
-    m_orchList = { gSwitchOrch, gCrmOrch, gPortsOrch, gBufferOrch, gIntfsOrch, gNeighOrch, gRouteOrch, copp_orch, tunnel_decap_orch, qos_orch, wm_orch, policer_orch, sflow_orch, debug_counter_orch};
+    m_orchList = { gSwitchOrch, gCrmOrch, gPortsOrch, gBufferOrch, gIntfsOrch, gNeighOrch, gNhgOrch, gRouteOrch, copp_orch, tunnel_decap_orch, qos_orch, wm_orch, policer_orch, sflow_orch, debug_counter_orch, gMacsecOrch};
 
     bool initialize_dtel = false;
     if (platform == BFN_PLATFORM_SUBSTRING || platform == VS_PLATFORM_SUBSTRING)

@@ -10,6 +10,7 @@
 #include "intfsorch.h"
 #include "neighorch.h"
 #include "routeorch.h"
+#include "nhgorch.h"
 #include "copporch.h"
 #include "tunneldecaporch.h"
 #include "qosorch.h"
@@ -32,6 +33,7 @@
 #include "directory.h"
 #include "natorch.h"
 #include "muxorch.h"
+#include "macsecorch.h"
 
 using namespace swss;
 
