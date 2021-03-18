@@ -2383,7 +2383,16 @@ bool RouteOrch::removeRoutePost(const RouteBulkContext& ctx)
             */
             else if (ol_nextHops.getSize() == 1)
             {
-                NextHopKey nexthop(ol_nextHops.to_string());
+                NextHopKey nexthop;
+                bool overlay_nh = ol_nextHops.is_overlay_nexthop();
+                if (overlay_nh)
+                {
+                    nexthop = NextHopKey(ol_nextHops.to_string(), overlay_nh);
+                }
+                else
+                {
+                    nexthop = NextHopKey(ol_nextHops.to_string());
+                }
 
                 if (nexthop.label_stack.getSize() &&
                     (m_neighOrch->getNextHopRefCount(nexthop) == 0))
