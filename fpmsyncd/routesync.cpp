@@ -43,6 +43,7 @@ using namespace swss;
 
 RouteSync::RouteSync(RedisPipeline *pipeline) :
     m_routeTable(pipeline, APP_ROUTE_TABLE_NAME, true),
+    m_label_routeTable(pipeline, APP_LABEL_ROUTE_TABLE_NAME, true),
     m_vnet_routeTable(pipeline, APP_VNET_RT_TABLE_NAME, true),
     m_vnet_tunnelTable(pipeline, APP_VNET_RT_TUNNEL_TABLE_NAME, true),
     m_warmStartHelper(pipeline, &m_routeTable, APP_ROUTE_TABLE_NAME, "bgp", "bgp"),
@@ -570,6 +571,12 @@ void RouteSync::onMsg(int nlmsg_type, struct nl_object *obj)
 
     /* Supports IPv4 or IPv6 address, otherwise return immediately */
     auto family = rtnl_route_get_family(route_obj);
+    /* Check for Label route. */
+    if (family == AF_MPLS)
+    {
+        onLabelRouteMsg(nlmsg_type, obj);
+        return;
+    }
     if (family != AF_INET && family != AF_INET6)
     {
         SWSS_LOG_INFO("Unknown route family support (object: %s)", nl_object_get_type(obj));
@@ -698,7 +705,7 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
     }
 
     /* Get nexthop lists */
-    string nexthops = getNextHopGw(route_obj);
+    string nexthops = getNextHopList(route_obj);
     string ifnames = getNextHopIf(route_obj);
 
     vector<string> alsv = tokenize(ifnames, ',');
@@ -747,6 +754,80 @@ void RouteSync::onRouteMsg(int nlmsg_type, struct nl_object *obj, char *vrf)
 }
 
 /* 
+ * Handle label route
+ * @arg nlmsg_type      Netlink message type
+ * @arg obj             Netlink object
+ */
+void RouteSync::onLabelRouteMsg(int nlmsg_type, struct nl_object *obj)
+{
+    struct rtnl_route *route_obj = (struct rtnl_route *)obj;
+    struct nl_addr *daddr;
+    char destaddr[MAX_ADDR_SIZE + 1] = {0};
+
+    daddr = rtnl_route_get_dst(route_obj);
+    nl_addr2str(daddr, destaddr, MAX_ADDR_SIZE);
+    SWSS_LOG_INFO("Receive new route message dest addr: %s", destaddr);
+    if (nl_addr_iszero(daddr)) return;
+
+    if (nlmsg_type == RTM_DELROUTE)
+    {
+        m_label_routeTable.del(destaddr);
+        return;
+    }
+    else if (nlmsg_type != RTM_NEWROUTE)
+    {
+        SWSS_LOG_INFO("Unknown message-type: %d for %s", nlmsg_type, destaddr);
+        return;
+    }
+
+    switch (rtnl_route_get_type(route_obj))
+    {
+        case RTN_BLACKHOLE:
+        {
+            vector<FieldValueTuple> fvVector;
+            FieldValueTuple fv("blackhole", "true");
+            fvVector.push_back(fv);
+            m_label_routeTable.set(destaddr, fvVector);
+            return;
+        }
+        case RTN_UNICAST:
+            break;
+
+        case RTN_MULTICAST:
+        case RTN_BROADCAST:
+        case RTN_LOCAL:
+            SWSS_LOG_INFO("BUM routes aren't supported yet (%s)", destaddr);
+            return;
+
+        default:
+            return;
+    }
+
+    struct nl_list_head *nhs = rtnl_route_get_nexthops(route_obj);
+    if (!nhs)
+    {
+        SWSS_LOG_INFO("Nexthop list is empty for %s", destaddr);
+        return;
+    }
+
+    /* Get nexthop lists */
+    string nexthops = getNextHopList(route_obj);
+    string ifnames = getNextHopIf(route_obj);
+
+    vector<FieldValueTuple> fvVector;
+    FieldValueTuple nh("nexthop", nexthops);
+    FieldValueTuple idx("ifname", ifnames);
+
+    fvVector.push_back(nh);
+    fvVector.push_back(idx);
+    fvVector.push_back(wt);
+
+    m_label_routeTable.set(destaddr, fvVector);
+    SWSS_LOG_INFO("LabelRouteTable set msg: %s %s %s",
+                  destaddr, nexthops.c_str(), ifnames.c_str());
+}
+
+/*
  * Handle vnet route 
  * @arg nlmsg_type      Netlink message type
  * @arg obj             Netlink object
@@ -884,6 +965,62 @@ bool RouteSync::getIfName(int if_index, char *if_name, size_t name_len)
     }
 
     return true;
+}
+
+/*
+ * Get next hop List
+ * @arg route_obj     route object
+ *
+ * Return concatenation of NHs: nh0 + "," + nh1 + .... + "," + nhN
+ */
+string RouteSync::getNextHopList(struct rtnl_route *route_obj)
+{
+    string result = "";
+
+    for (int i = 0; i < rtnl_route_get_nnexthops(route_obj); i++)
+    {
+        struct rtnl_nexthop *nexthop = rtnl_route_nexthop_n(route_obj, i);
+        struct nl_addr *addr = NULL;
+
+        if ((addr = rtnl_route_nh_get_newdst(nexthop)))
+        {
+            /* Next hop label is not empty */
+            char label[MAX_ADDR_SIZE + 1] = {0};
+            nl_addr2str(addr, label, MAX_ADDR_SIZE);
+            result += label;
+            result += string("+");
+        }
+        else if ((addr = rtnl_route_nh_get_encap_mpls_dst(nexthop)))
+        {
+            /* Next hop encap is not empty */
+            char label[MAX_ADDR_SIZE + 1] = {0};
+            nl_addr2str(addr, label, MAX_ADDR_SIZE);
+            result += label;
+            result += string("+");
+        }
+
+        if ((addr = rtnl_route_nh_get_gateway(nexthop)))
+        {
+            /* Next hop gateway is not empty */
+            char gw_ip[MAX_ADDR_SIZE + 1] = {0};
+            nl_addr2str(addr, gw_ip, MAX_ADDR_SIZE);
+            result += gw_ip;
+        }
+        else if ((addr = rtnl_route_nh_get_via(nexthop)))
+        {
+            /* Next hop via is not empty */
+            char via_ip[MAX_ADDR_SIZE + 1] = {0};
+            nl_addr2str(addr, via_ip, MAX_ADDR_SIZE);
+            result += via_ip;
+        }
+
+        if (i + 1 < rtnl_route_get_nnexthops(route_obj))
+        {
+            result += string(",");
+        }
+    }
+
+    return result;
 }
 
 /*

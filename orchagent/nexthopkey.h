@@ -3,6 +3,7 @@
 
 #include "ipaddress.h"
 #include "tokenize.h"
+#include "label.h"
 
 #define NH_DELIMITER '@'
 #define NHG_DELIMITER ','
@@ -15,6 +16,7 @@ struct NextHopKey
     string              alias;          // incoming interface alias
     uint32_t            vni;            // Encap VNI overlay nexthop
     MacAddress          mac_address;    // Overlay Nexthop MAC.
+    LabelStack          label_stack;    // MPLS label stack
 
     NextHopKey() = default;
     NextHopKey(const std::string &ipstr, const std::string &alias) : ip_address(ipstr), alias(alias), vni(0), mac_address() {}
@@ -26,7 +28,18 @@ struct NextHopKey
             std::string err = "Error converting " + str + " to NextHop";
             throw std::invalid_argument(err);
         }
-        auto keys = tokenize(str, NH_DELIMITER);
+        std::size_t label_delimiter = str.find(LABELSTACK_DELIMITER);
+        std::string ip_str;
+        if (label_delimiter != std::string::npos)
+        {
+            label_stack = LabelStack(str.substr(0, label_delimiter));
+            ip_str = str.substr(label_delimiter+1);
+        }
+        else
+        {
+            ip_str = str;
+        }
+        auto keys = tokenize(ip_str, NH_DELIMITER);
         vni = 0;
         mac_address = MacAddress();
         if (keys.size() == 1)
@@ -56,7 +69,18 @@ struct NextHopKey
             std::string err = "Error converting " + str + " to NextHop";
             throw std::invalid_argument(err);
         }
-        auto keys = tokenize(str, NH_DELIMITER);
+        std::size_t label_delimiter = str.find(LABELSTACK_DELIMITER);
+        std::string ip_str;
+        if (label_delimiter != std::string::npos)
+        {
+            label_stack = LabelStack(str.substr(0, label_delimiter));
+            ip_str = str.substr(label_delimiter+1);
+        }
+        else
+        {
+            ip_str = str;
+        }
+        auto keys = tokenize(ip_str, NH_DELIMITER);
         if (keys.size() != 4)
         {
             std::string err = "Error converting " + str + " to NextHop";
@@ -70,13 +94,27 @@ struct NextHopKey
 
     const std::string to_string() const
     {
-        return ip_address.to_string() + NH_DELIMITER + alias;
+        std::string str;
+        if (!label_stack.empty())
+        {
+            str += label_stack.to_string();
+            str += LABELSTACK_DELIMITER;
+        }
+        str += ip_address.to_string() + NH_DELIMITER + alias;
+        return str;
     }
 
     const std::string to_string(bool overlay_nh) const
     {
-        std::string s_vni = std::to_string(vni);
-        return ip_address.to_string() + NH_DELIMITER + alias + NH_DELIMITER + s_vni + NH_DELIMITER + mac_address.to_string();
+        std::string str;
+        if (!label_stack.empty())
+        {
+            str += label_stack.to_string();
+            str += LABELSTACK_DELIMITER;
+        }
+        str += (ip_address.to_string() + NH_DELIMITER + alias + NH_DELIMITER +
+                std::to_string(vni) + NH_DELIMITER + mac_address.to_string());
+        return str;
     }
 
     bool operator<(const NextHopKey &o) const

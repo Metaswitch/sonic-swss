@@ -12,6 +12,7 @@ extern sai_object_id_t gSwitchId;
 
 extern sai_next_hop_group_api_t*    sai_next_hop_group_api;
 extern sai_route_api_t*             sai_route_api;
+extern sai_mpls_api_t*              sai_mpls_api;
 extern sai_switch_api_t*            sai_switch_api;
 
 extern PortsOrch *gPortsOrch;
@@ -22,12 +23,11 @@ extern Directory<Orch*> gDirectory;
 #define DEFAULT_NUMBER_OF_ECMP_GROUPS   128
 #define DEFAULT_MAX_ECMP_GROUP_SIZE     32
 
-const int routeorch_pri = 5;
-
-RouteOrch::RouteOrch(DBConnector *db, string tableName, SwitchOrch *switchOrch, NeighOrch *neighOrch, IntfsOrch *intfsOrch, VRFOrch *vrfOrch, FgNhgOrch *fgNhgOrch) :
+RouteOrch::RouteOrch(DBConnector *db, vector<table_name_with_pri_t> &tableNames, SwitchOrch *switchOrch, NeighOrch *neighOrch, IntfsOrch *intfsOrch, VRFOrch *vrfOrch, FgNhgOrch *fgNhgOrch) :
         gRouteBulker(sai_route_api),
+        gLabelRouteBulker(sai_mpls_api),
         gNextHopGroupMemberBulker(sai_next_hop_group_api, gSwitchId),
-        Orch(db, tableName, routeorch_pri),
+        Orch(db, tableNames),
         m_switchOrch(switchOrch),
         m_neighOrch(neighOrch),
         m_intfsOrch(intfsOrch),
@@ -394,6 +394,22 @@ void RouteOrch::doTask(Consumer& consumer)
     {
         return;
     }
+
+    string table_name = consumer.getTableName();
+
+    if (table_name == APP_ROUTE_TABLE_NAME)
+    {
+        doPrefixTask(consumer);
+    }
+    else if (table_name == APP_LABEL_ROUTE_TABLE_NAME)
+    {
+        doLabelTask(consumer);
+    }
+}
+
+void RouteOrch::doPrefixTask(Consumer& consumer)
+{
+    SWSS_LOG_ENTER();
 
     auto it = consumer.m_toSync.begin();
     while (it != consumer.m_toSync.end())
@@ -998,7 +1014,19 @@ bool RouteOrch::addNextHopGroup(const NextHopGroupKey &nexthops)
      * and add the corresponding next_hop_id to next_hop_ids. */
     for (auto it : next_hop_set)
     {
-        if (!m_neighOrch->hasNextHop(it))
+        sai_object_id_t next_hop_id;
+        if (m_neighOrch->hasNextHop(it))
+        {
+            next_hop_id = m_neighOrch->getNextHopId(it);
+        }
+        /* See if there is an IP neighbor nexthop */
+        else if (it.label_stack.getSize() &&
+                 m_neighOrch->hasNextHop(NextHopKey(it.ip_address, it.alias)))
+        {
+            m_neighOrch->addNextHop(it);
+            next_hop_id = m_neighOrch->getNextHopId(it);
+        }
+        else
         {
             SWSS_LOG_INFO("Failed to get next hop %s in %s",
                     it.to_string().c_str(), nexthops.to_string().c_str());
@@ -1023,7 +1051,6 @@ bool RouteOrch::addNextHopGroup(const NextHopGroupKey &nexthops)
     nhg_attr.value.s32 = SAI_NEXT_HOP_GROUP_TYPE_ECMP;
     nhg_attrs.push_back(nhg_attr);
 
-    sai_object_id_t next_hop_group_id;
     sai_status_t status = sai_next_hop_group_api->create_next_hop_group(&next_hop_group_id,
                                                                         gSwitchId,
                                                                         (uint32_t)nhg_attrs.size(),
@@ -1188,6 +1215,11 @@ bool RouteOrch::removeNextHopGroup(const NextHopGroupKey &nexthops)
                 }
             }
         }
+        else if (it.label_stack.getSize() &&
+                 (m_neighOrch->getNextHopRefCount(it) == 0))
+        {
+            m_neighOrch->removeNextHop(it);
+        }
     }
     m_syncdNextHopGroups.erase(nexthops);
 
@@ -1345,6 +1377,13 @@ bool RouteOrch::addRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextHops)
         {
             if (m_neighOrch->hasNextHop(nexthop))
             {
+                next_hop_id = m_neighOrch->getNextHopId(nexthop);
+            }
+            /* See if there is an IP neighbor nexthop */
+            else if (nexthop.label_stack.getSize() &&
+                     m_neighOrch->hasNextHop(NextHopKey(nexthop.ip_address, nexthop.alias)))
+            {
+                m_neighOrch->addNextHop(nexthop);
                 next_hop_id = m_neighOrch->getNextHopId(nexthop);
             }
             else
@@ -1845,7 +1884,22 @@ bool RouteOrch::removeRoutePost(const RouteBulkContext& ctx)
             && m_syncdNextHopGroups[it_route->second].ref_count == 0)
         {
             m_bulkNhgReducedRefCnt.emplace(it_route->second);
-        } else if (ol_nextHops.is_overlay_nexthop()){
+        }
+        /*
+         * Additionally check if the NH has label and its ref count == 0, then
+         * remove the label next hop.
+         */
+        else if (it_route->second.getSize() == 1)
+        {
+            NextHopKey nexthop(it_route->second.to_string());
+            if (nexthop.label_stack.getSize() &&
+                (m_neighOrch->getNextHopRefCount(nexthop) == 0))
+            {
+                m_neighOrch->removeNextHop(nexthop);
+            }
+        }
+        else if (ol_nextHops.is_overlay_nexthop())
+        {
             SWSS_LOG_NOTICE("Remove overlay Nexthop %s", ol_nextHops.to_string().c_str());
             removeOverlayNextHops(vrf_id, ol_nextHops);
         }
@@ -1951,3 +2005,767 @@ bool RouteOrch::removeOverlayNextHops(sai_object_id_t vrf_id, const NextHopGroup
     return true;
 }
 
+void RouteOrch::doLabelTask(Consumer& consumer)
+{
+    SWSS_LOG_ENTER();
+
+    auto it = consumer.m_toSync.begin();
+    while (it != consumer.m_toSync.end())
+    {
+        // Route bulk results will be stored in a map
+        std::map<
+                std::pair<
+                        std::string,            // Key
+                        std::string             // Op
+                >,
+                LabelRouteBulkContext
+        >                                       toBulk;
+
+        // Add or remove routes with a route bulker
+        while (it != consumer.m_toSync.end())
+        {
+            KeyOpFieldsValuesTuple t = it->second;
+
+            string key = kfvKey(t);
+            string op = kfvOp(t);
+
+            auto rc = toBulk.emplace(std::piecewise_construct,
+                    std::forward_as_tuple(key, op),
+                    std::forward_as_tuple());
+
+            bool inserted = rc.second;
+            auto& ctx = rc.first->second;
+            if (!inserted)
+            {
+                ctx.clear();
+            }
+
+            /* Get notification from application */
+            /* resync application:
+             * When routeorch receives 'resync' message, it marks all current
+             * routes as dirty and waits for 'resync complete' message. For all
+             * newly received routes, if they match current dirty routes, it unmarks
+             * them dirty. After receiving 'resync complete' message, it creates all
+             * newly added routes and removes all dirty routes.
+             */
+            if (key == "resync")
+            {
+                if (op == "SET")
+                {
+                    /* Mark all current routes as dirty (DEL) in consumer.m_toSync map */
+                    SWSS_LOG_NOTICE("Start resync label routes\n");
+                    for (auto j : m_syncdLabelRoutes)
+                    {
+                        string vrf;
+
+                        if (j.first != gVirtualRouterId)
+                        {
+                            vrf = m_vrfOrch->getVRFname(j.first) + ":";
+                        }
+
+                        for (auto i : j.second)
+                        {
+                            vector<FieldValueTuple> v;
+                            key = vrf + to_string(i.first);
+                            auto x = KeyOpFieldsValuesTuple(key, DEL_COMMAND, v);
+                            consumer.addToSync(x);
+                        }
+                    }
+                    m_resync = true;
+                }
+                else
+                {
+                    SWSS_LOG_NOTICE("Complete resync label routes\n");
+                    m_resync = false;
+                }
+
+                it = consumer.m_toSync.erase(it);
+                continue;
+            }
+
+            if (m_resync)
+            {
+                it++;
+                continue;
+            }
+
+            sai_object_id_t& vrf_id = ctx.vrf_id;
+            Label& label = ctx.label;
+
+            if (!key.compare(0, strlen(VRF_PREFIX), VRF_PREFIX))
+            {
+                size_t found = key.find(':');
+                string vrf_name = key.substr(0, found);
+
+                if (!m_vrfOrch->isVRFexists(vrf_name))
+                {
+                    it++;
+                    continue;
+                }
+                vrf_id = m_vrfOrch->getVRFid(vrf_name);
+                label = stoi(key.substr(found+1));
+            }
+            else
+            {
+                vrf_id = gVirtualRouterId;
+                label = stoi(key);
+            }
+
+            if (op == SET_COMMAND)
+            {
+                string ips;
+                string aliases;
+                string vni_labels;
+                string remote_macs;
+                bool& excp_intfs_flag = ctx.excp_intfs_flag;
+                bool overlay_nh = false;
+
+                for (auto i : kfvFieldsValues(t))
+                {
+                    if (fvField(i) == "nexthop")
+                        ips = fvValue(i);
+
+                    if (fvField(i) == "ifname")
+                        aliases = fvValue(i);
+
+                    if (fvField(i) == "vni_label") {
+                        vni_labels = fvValue(i);
+                        overlay_nh = true;
+                    }
+
+                    if (fvField(i) == "router_mac")
+                        remote_macs = fvValue(i);
+                }
+                vector<string>& ipv = ctx.ipv;
+                ipv = tokenize(ips, ',');
+                vector<string> alsv = tokenize(aliases, ',');
+                vector<string> vni_labelv = tokenize(vni_labels, ',');
+                vector<string> rmacv = tokenize(remote_macs, ',');
+
+                /* Resize the ip vector to match ifname vector
+                 * as tokenize(",", ',') will miss the last empty segment. */
+                if (alsv.size() == 0)
+                {
+                    SWSS_LOG_WARN("Skip the route %s, for it has an empty ifname field.", key.c_str());
+                    it = consumer.m_toSync.erase(it);
+                    continue;
+                }
+                else if (alsv.size() != ipv.size())
+                {
+                    SWSS_LOG_NOTICE("Route %s: resize ipv to match alsv, %zd -> %zd.", key.c_str(), ipv.size(), alsv.size());
+                    ipv.resize(alsv.size());
+                }
+
+                for (auto alias : alsv)
+                {
+                    /* skip route to management, docker, loopback
+                     * TODO: for route to loopback interface, the proper
+                     * way is to create loopback interface and then create
+                     * route pointing to it, so that we can traps packets to
+                     * CPU */
+                    if (alias == "eth0" || alias == "docker0" ||
+                        alias == "lo" || !alias.compare(0, strlen(LOOPBACK_PREFIX), LOOPBACK_PREFIX))
+                    {
+                        excp_intfs_flag = true;
+                        break;
+                    }
+                }
+
+                // TODO: cannot trust m_portsOrch->getPortIdByAlias because sometimes alias is empty
+                if (excp_intfs_flag)
+                {
+                    /* If any existing routes are updated to point to the
+                     * above interfaces, remove them from the ASIC. */
+                    if (removeLabelRoute(ctx))
+                        it = consumer.m_toSync.erase(it);
+                    else
+                        it++;
+                    continue;
+                }
+
+                string nhg_str = "";
+                NextHopGroupKey& nhg = ctx.nhg;
+
+                if (overlay_nh == false)
+                {
+                    nhg_str = ipv[0] + NH_DELIMITER + alsv[0];
+
+                    for (uint32_t i = 1; i < ipv.size(); i++)
+                    {
+                        nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + alsv[i];
+                    }
+
+                    nhg = NextHopGroupKey(nhg_str);
+                }
+                else
+                {
+                    nhg_str = ipv[0] + NH_DELIMITER + "vni" + alsv[0] + NH_DELIMITER + vni_labelv[0] + NH_DELIMITER + rmacv[0];
+                    for (uint32_t i = 1; i < ipv.size(); i++)
+                    {
+                        nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + "vni" + alsv[i] + NH_DELIMITER + vni_labelv[i] + NH_DELIMITER + rmacv[i];
+                    }
+
+                    nhg = NextHopGroupKey(nhg_str, overlay_nh);
+                }
+
+                if (ipv.size() == 1 && NextHopKey(ipv[0]).ip_address.isZero())
+                {
+                    /* blackhole to be done */
+                    if (alsv[0] == "unknown")
+                    {
+                        /* add addBlackholeRoute or addRoute support empty nhg */
+                        it = consumer.m_toSync.erase(it);
+                    }
+                    /* directly connected route to VRF interface which come from kernel */
+                    else if (!alsv[0].compare(0, strlen(VRF_PREFIX), VRF_PREFIX))
+                    {
+                        it = consumer.m_toSync.erase(it);
+                    }
+                    /* subnet route, vrf leaked route, etc */
+                    else
+                    {
+                        if (addLabelRoute(ctx, nhg))
+                            it = consumer.m_toSync.erase(it);
+                        else
+                            it++;
+                    }
+                }
+                else if (m_syncdLabelRoutes.find(vrf_id) == m_syncdLabelRoutes.end() ||
+                         m_syncdLabelRoutes.at(vrf_id).find(label) == m_syncdLabelRoutes.at(vrf_id).end() ||
+                         m_syncdLabelRoutes.at(vrf_id).at(label) != nhg)
+                {
+                    if (addLabelRoute(ctx, nhg))
+                        it = consumer.m_toSync.erase(it);
+                    else
+                        it++;
+                }
+                else
+                    /* Duplicate entry */
+                    it = consumer.m_toSync.erase(it);
+
+                // If already exhaust the nexthop groups, and there are pending removing routes in bulker,
+                // flush the bulker and possibly collect some released nexthop groups
+                if (m_nextHopGroupCount >= m_maxNextHopGroupCount &&
+                    gLabelRouteBulker.removing_entries_count() > 0)
+                {
+                    break;
+                }
+            }
+            else if (op == DEL_COMMAND)
+            {
+                /* Cannot locate the route or remove succeed */
+                if (removeLabelRoute(ctx))
+                    it = consumer.m_toSync.erase(it);
+                else
+                    it++;
+            }
+            else
+            {
+                SWSS_LOG_ERROR("Unknown operation type %s\n", op.c_str());
+                it = consumer.m_toSync.erase(it);
+            }
+        }
+
+        // Flush the route bulker, so routes will be written to syncd and ASIC
+        gLabelRouteBulker.flush();
+
+        // Go through the bulker results
+        auto it_prev = consumer.m_toSync.begin();
+        m_bulkNhgReducedRefCnt.clear();
+        while (it_prev != it)
+        {
+            KeyOpFieldsValuesTuple t = it_prev->second;
+
+            string key = kfvKey(t);
+            string op = kfvOp(t);
+            auto found = toBulk.find(make_pair(key, op));
+            if (found == toBulk.end())
+            {
+                it_prev++;
+                continue;
+            }
+
+            const auto& ctx = found->second;
+            const auto& object_statuses = ctx.object_statuses;
+            if (object_statuses.empty())
+            {
+                it_prev++;
+                continue;
+            }
+
+            const sai_object_id_t& vrf_id = ctx.vrf_id;
+            const Label& label = ctx.label;
+
+            if (op == SET_COMMAND)
+            {
+                const bool& excp_intfs_flag = ctx.excp_intfs_flag;
+                const vector<string>& ipv = ctx.ipv;
+
+                if (excp_intfs_flag)
+                {
+                    /* If any existing routes are updated to point to the
+                     * above interfaces, remove them from the ASIC. */
+                    if (removeLabelRoutePost(ctx))
+                        it_prev = consumer.m_toSync.erase(it_prev);
+                    else
+                        it_prev++;
+                    continue;
+                }
+
+                const NextHopGroupKey& nhg = ctx.nhg;
+
+                if (ipv.size() == 1 && IpAddress(ipv[0]).isZero())
+                {
+                    if (addLabelRoutePost(ctx, nhg))
+                        it_prev = consumer.m_toSync.erase(it_prev);
+                    else
+                        it_prev++;
+                }
+                else if (m_syncdLabelRoutes.find(vrf_id) == m_syncdLabelRoutes.end() ||
+                         m_syncdLabelRoutes.at(vrf_id).find(label) == m_syncdLabelRoutes.at(vrf_id).end() ||
+                         m_syncdLabelRoutes.at(vrf_id).at(label) != nhg)
+                {
+                    if (addLabelRoutePost(ctx, nhg))
+                        it_prev = consumer.m_toSync.erase(it_prev);
+                    else
+                        it_prev++;
+                }
+            }
+            else if (op == DEL_COMMAND)
+            {
+                /* Cannot locate the route or remove succeed */
+                if (removeLabelRoutePost(ctx))
+                    it_prev = consumer.m_toSync.erase(it_prev);
+                else
+                    it_prev++;
+            }
+        }
+
+        /* Remove next hop group if the reference count decreases to zero */
+        for (auto it_nhg = m_bulkNhgReducedRefCnt.begin(); it_nhg != m_bulkNhgReducedRefCnt.end(); it_nhg++)
+        {
+            if (m_syncdNextHopGroups[*it_nhg].ref_count == 0)
+            {
+                removeNextHopGroup(*it_nhg);
+            }
+        }
+    }
+}
+
+void RouteOrch::addTempLabelRoute(LabelRouteBulkContext& ctx, const NextHopGroupKey &nextHops)
+{
+    SWSS_LOG_ENTER();
+
+    Label& label = ctx.label;
+
+    auto next_hop_set = nextHops.getNextHops();
+
+    /* Remove next hops that are not in m_syncdNextHops */
+    for (auto it = next_hop_set.begin(); it != next_hop_set.end();)
+    {
+        if (!m_neighOrch->hasNextHop(*it))
+        {
+            SWSS_LOG_INFO("Failed to get next hop %s for %u",
+                   (*it).to_string().c_str(), label);
+            it = next_hop_set.erase(it);
+        }
+        else
+            it++;
+    }
+
+    /* Return if next_hop_set is empty */
+    if (next_hop_set.empty())
+        return;
+
+    /* Randomly pick an address from the set */
+    auto it = next_hop_set.begin();
+    advance(it, rand() % next_hop_set.size());
+
+    /* Set the route's temporary next hop to be the randomly picked one */
+    NextHopGroupKey tmp_next_hop((*it).to_string());
+    ctx.tmp_next_hop = tmp_next_hop;
+
+    addLabelRoute(ctx, tmp_next_hop);
+}
+
+bool RouteOrch::addLabelRoute(LabelRouteBulkContext& ctx, const NextHopGroupKey &nextHops)
+{
+    SWSS_LOG_ENTER();
+
+    sai_object_id_t& vrf_id = ctx.vrf_id;
+    Label& label = ctx.label;
+
+    /* next_hop_id indicates the next hop id or next hop group id of this route */
+    sai_object_id_t next_hop_id;
+
+    if (m_syncdLabelRoutes.find(vrf_id) == m_syncdLabelRoutes.end())
+    {
+        m_syncdLabelRoutes.emplace(vrf_id, LabelRouteTable());
+        m_vrfOrch->increaseVrfRefCount(vrf_id);
+    }
+
+    auto it_route = m_syncdLabelRoutes.at(vrf_id).find(label);
+
+    /* The route is pointing to a next hop */
+    if (nextHops.getSize() == 1)
+    {
+        NextHopKey nexthop(nextHops.to_string());
+        if (nexthop.ip_address.isZero())
+        {
+            next_hop_id = m_intfsOrch->getRouterIntfsId(nexthop.alias);
+            /* rif is not created yet */
+            if (next_hop_id == SAI_NULL_OBJECT_ID)
+            {
+                SWSS_LOG_INFO("Failed to get next hop %s for %u",
+                        nextHops.to_string().c_str(), label);
+                return false;
+            }
+        }
+        else
+        {
+            if (m_neighOrch->hasNextHop(nexthop))
+            {
+                next_hop_id = m_neighOrch->getNextHopId(nexthop);
+            }
+            /* See if there is an IP neighbor nexthop */
+            else if (nexthop.label_stack.getSize() &&
+                     m_neighOrch->hasNextHop(NextHopKey(nexthop.ip_address, nexthop.alias)))
+            {
+                m_neighOrch->addNextHop(nexthop);
+                next_hop_id = m_neighOrch->getNextHopId(nexthop);
+            }
+            else
+            {
+                SWSS_LOG_INFO("Failed to get next hop %s for %u",
+                        nextHops.to_string().c_str(), label);
+                return false;
+            }
+        }
+    }
+    /* The route is pointing to a next hop group */
+    else
+    {
+        /* Check if there is already an existing next hop group */
+        if (!hasNextHopGroup(nextHops))
+        {
+            /* Try to create a new next hop group */
+            if (!addNextHopGroup(nextHops))
+            {
+                /* Failed to create the next hop group and check if a temporary route is needed */
+
+                /* If the current next hop is part of the next hop group to sync,
+                 * then return false and no need to add another temporary route. */
+                if (it_route != m_syncdLabelRoutes.at(vrf_id).end() && it_route->second.getSize() == 1)
+                {
+                    NextHopKey nexthop(it_route->second.to_string());
+                    if (nextHops.contains(nexthop))
+                    {
+                        return false;
+                    }
+                }
+
+                /* Add a temporary route when a next hop group cannot be added,
+                 * and there is no temporary route right now or the current temporary
+                 * route is not pointing to a member of the next hop group to sync. */
+                addTempLabelRoute(ctx, nextHops);
+                /* Return false since the original route is not successfully added */
+                return false;
+            }
+        }
+
+        next_hop_id = m_syncdNextHopGroups[nextHops].next_hop_group_id;
+    }
+
+    /* Sync the inseg entry */
+    sai_inseg_entry_t inseg_entry;
+    // route_entry.vr_id = vrf_id; No VRF support for MPLS?
+    inseg_entry.switch_id = gSwitchId;
+    inseg_entry.label = label;
+
+    sai_attribute_t inseg_attr;
+    auto& object_statuses = ctx.object_statuses;
+
+    /* If the label is not in m_syncdLabelRoutes, then we need to create the route
+     * for this prefix with the new next hop (group) id. If the prefix is already
+     * in m_syncdLabelRoutes, then we need to update the route with a new next hop
+     * (group) id. The old next hop (group) is then not used and the reference
+     * count will decrease by 1.
+     */
+    if (it_route == m_syncdLabelRoutes.at(vrf_id).end())
+    {
+        vector<sai_attribute_t> inseg_attrs;
+        inseg_attr.id = SAI_INSEG_ENTRY_ATTR_NEXT_HOP_ID;
+        inseg_attr.value.oid = next_hop_id;
+        inseg_attrs.push_back(inseg_attr);
+        inseg_attr.id = SAI_INSEG_ENTRY_ATTR_NUM_OF_POP;
+        inseg_attr.value.u32 = 1;
+        inseg_attrs.push_back(inseg_attr);
+
+        /* Default SAI_INSEG_ENTRY_ATTR_PACKET_ACTION is SAI_PACKET_ACTION_FORWARD */
+        object_statuses.emplace_back();
+        sai_status_t status = gLabelRouteBulker.create_entry(&object_statuses.back(), &inseg_entry, (uint32_t)inseg_attrs.size(), inseg_attrs.data());
+        if (status == SAI_STATUS_ITEM_ALREADY_EXISTS)
+        {
+            SWSS_LOG_ERROR("Failed to create label route %u with next hop(s) %s",
+                           label, nextHops.to_string().c_str());
+            return false;
+        }
+    }
+    else
+    {
+        /* Set the packet action to forward when there was no next hop (dropped) */
+        if (it_route->second.getSize() == 0)
+        {
+            vector<sai_attribute_t> inseg_attrs;
+            inseg_attr.id = SAI_INSEG_ENTRY_ATTR_NEXT_HOP_ID;
+            inseg_attr.value.oid = next_hop_id;
+            inseg_attrs.push_back(inseg_attr);
+            inseg_attr.id = SAI_INSEG_ENTRY_ATTR_NUM_OF_POP;
+            inseg_attr.value.u32 = 1;
+            inseg_attrs.push_back(inseg_attr);
+
+            inseg_attr.id = SAI_INSEG_ENTRY_ATTR_PACKET_ACTION;
+            inseg_attr.value.s32 = SAI_PACKET_ACTION_FORWARD;
+
+            object_statuses.emplace_back();
+            gLabelRouteBulker.set_entry_attribute(&object_statuses.back(), &inseg_entry, &inseg_attr);
+        }
+
+        inseg_attr.id = SAI_INSEG_ENTRY_ATTR_NEXT_HOP_ID;
+        inseg_attr.value.oid = next_hop_id;
+
+        /* Set the next hop ID to a new value */
+        object_statuses.emplace_back();
+        gLabelRouteBulker.set_entry_attribute(&object_statuses.back(), &inseg_entry, &inseg_attr);
+    }
+    return false;
+}
+
+bool RouteOrch::addLabelRoutePost(const LabelRouteBulkContext& ctx, const NextHopGroupKey &nextHops)
+{
+    SWSS_LOG_ENTER();
+
+    const sai_object_id_t& vrf_id = ctx.vrf_id;
+    const Label& label = ctx.label;
+
+    const auto& object_statuses = ctx.object_statuses;
+
+    if (object_statuses.empty())
+    {
+        // Something went wrong before router bulker, will retry
+        return false;
+    }
+
+    /* next_hop_id indicates the next hop id or next hop group id of this route */
+    sai_object_id_t next_hop_id;
+
+    /* The route is pointing to a next hop */
+    if (nextHops.getSize() == 1)
+    {
+        NextHopKey nexthop(nextHops.to_string());
+        if (nexthop.ip_address.isZero())
+        {
+            next_hop_id = m_intfsOrch->getRouterIntfsId(nexthop.alias);
+            /* rif is not created yet */
+            if (next_hop_id == SAI_NULL_OBJECT_ID)
+            {
+                SWSS_LOG_INFO("Failed to get next hop %s for label %u",
+                              nextHops.to_string().c_str(), label);
+                return false;
+            }
+        }
+        else
+        {
+            if (!m_neighOrch->hasNextHop(nexthop))
+            {
+                SWSS_LOG_INFO("Failed to get next hop %s for label %u",
+                              nextHops.to_string().c_str(), label);
+                return false;
+            }
+        }
+    }
+    /* The route is pointing to a next hop group */
+    else
+    {
+        if (!hasNextHopGroup(nextHops))
+        {
+            // Previous added an temporary route
+            auto& tmp_next_hop = ctx.tmp_next_hop;
+            addLabelRoutePost(ctx, tmp_next_hop);
+            return false;
+        }
+    }
+
+    auto it_status = object_statuses.begin();
+    auto it_route = m_syncdLabelRoutes.at(vrf_id).find(label);
+    if (it_route == m_syncdLabelRoutes.at(vrf_id).end())
+    {
+        if (*it_status++ != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR("Failed to create label %u with next hop(s) %s",
+                           label, nextHops.to_string().c_str());
+            /* Clean up the newly created next hop group entry */
+            if (nextHops.getSize() > 1)
+            {
+                removeNextHopGroup(nextHops);
+            }
+            return false;
+        }
+
+        gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_MPLS_INSEG);
+
+        /* Increase the ref_count for the next hop (group) entry */
+        increaseNextHopRefCount(nextHops);
+        SWSS_LOG_INFO("Post create label %u with next hop(s) %s",
+                      label, nextHops.to_string().c_str());
+    }
+    else
+    {
+        sai_status_t status;
+
+        /* Set the packet action to forward when there was no next hop (dropped) */
+        if (it_route->second.getSize() == 0)
+        {
+            status = *it_status++;
+            if (status != SAI_STATUS_SUCCESS)
+            {
+                SWSS_LOG_ERROR("Failed to set label %u with packet action forward, %d",
+                               label, status);
+                return false;
+            }
+        }
+
+        status = *it_status++;
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR("Failed to set label %u with next hop(s) %s",
+                           label, nextHops.to_string().c_str());
+            return false;
+        }
+
+        /* Increase the ref_count for the next hop (group) entry */
+        increaseNextHopRefCount(nextHops);
+
+        decreaseNextHopRefCount(it_route->second);
+        if (it_route->second.getSize() > 1
+            && m_syncdNextHopGroups[it_route->second].ref_count == 0)
+        {
+            m_bulkNhgReducedRefCnt.emplace(it_route->second);
+        }
+        SWSS_LOG_INFO("Post set label %u with next hop(s) %s",
+                      label, nextHops.to_string().c_str());
+    }
+
+    m_syncdLabelRoutes[vrf_id][label] = nextHops;
+
+#if 0 // TODO: MPLS observers?
+    notifyNextHopChangeObservers(vrf_id, label, nextHops, true);
+#endif // 0 TODO
+    return true;
+}
+
+bool RouteOrch::removeLabelRoute(LabelRouteBulkContext& ctx)
+{
+    SWSS_LOG_ENTER();
+
+    sai_object_id_t& vrf_id = ctx.vrf_id;
+    Label& label = ctx.label;
+
+    auto it_route_table = m_syncdLabelRoutes.find(vrf_id);
+    if (it_route_table == m_syncdLabelRoutes.end())
+    {
+        SWSS_LOG_INFO("Failed to find route table, vrf_id 0x%" PRIx64 "\n", vrf_id);
+        return true;
+    }
+
+    sai_inseg_entry_t inseg_entry;
+    //inseg_entry.vr_id = vrf_id; No VRF support for MPLS
+    inseg_entry.switch_id = gSwitchId;
+    inseg_entry.label = label;
+
+    auto it_route = it_route_table->second.find(label);
+    //size_t creating = gLabelRouteBulker.creating_entries_count(inseg_entry);
+    if (it_route == it_route_table->second.end())
+    {
+        SWSS_LOG_INFO("Failed to find inseg entry, vrf_id 0x%" PRIx64 ", label %u\n",
+                      vrf_id, label);
+        return true;
+    }
+
+    auto& object_statuses = ctx.object_statuses;
+
+    object_statuses.emplace_back();
+    gLabelRouteBulker.remove_entry(&object_statuses.back(), &inseg_entry);
+
+    return false;
+}
+
+bool RouteOrch::removeLabelRoutePost(const LabelRouteBulkContext& ctx)
+{
+    SWSS_LOG_ENTER();
+
+    const sai_object_id_t& vrf_id = ctx.vrf_id;
+    const Label& label = ctx.label;
+
+    auto& object_statuses = ctx.object_statuses;
+
+    if (object_statuses.empty())
+    {
+        // Something went wrong before router bulker, will retry
+        return false;
+    }
+
+    auto it_route_table = m_syncdLabelRoutes.find(vrf_id);
+    auto it_route = it_route_table->second.find(label);
+    auto it_status = object_statuses.begin();
+
+    sai_status_t status = *it_status++;
+    if (status != SAI_STATUS_SUCCESS)
+    {
+        SWSS_LOG_ERROR("Failed to remove label:%u\n", label);
+        return false;
+    }
+
+    gCrmOrch->decCrmResUsedCounter(CrmResourceType::CRM_MPLS_INSEG);
+
+    /*
+     * Decrease the reference count only when the route is pointing to a next hop.
+     */
+    decreaseNextHopRefCount(it_route->second);
+    if (it_route->second.getSize() > 1
+        && m_syncdNextHopGroups[it_route->second].ref_count == 0)
+    {
+        m_bulkNhgReducedRefCnt.emplace(it_route->second);
+    }
+    /*
+     * Additionally check if the NH has label and its ref count == 0, then
+     * remove the label next hop.
+     */
+    else if (it_route->second.getSize() == 1)
+    {
+        NextHopKey nexthop(it_route->second.to_string());
+        if (nexthop.label_stack.getSize() &&
+            (m_neighOrch->getNextHopRefCount(nexthop) == 0))
+        {
+            m_neighOrch->removeNextHop(nexthop);
+        }
+    }
+
+    SWSS_LOG_INFO("Remove label %u with next hop(s) %s",
+                  label, it_route->second.to_string().c_str());
+
+    it_route_table->second.erase(label);
+
+#if 0 // TODO: MPLS observers support?
+    /* Notify about the route next hop removal */
+    notifyNextHopChangeObservers(vrf_id, label, NextHopGroupKey(), false);
+#endif // 0 TODO
+
+    if (it_route_table->second.size() == 0)
+    {
+        m_syncdLabelRoutes.erase(vrf_id);
+        m_vrfOrch->decreaseVrfRefCount(vrf_id);
+    }
+
+    return true;
+}

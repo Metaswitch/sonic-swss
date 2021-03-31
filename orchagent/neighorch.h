@@ -48,6 +48,8 @@ public:
     ~NeighOrch();
 
     bool hasNextHop(const NextHopKey&);
+    bool addNextHop(const NextHopKey&);
+    bool removeNextHop(const NextHopKey&);
 
     sai_object_id_t getNextHopId(const NextHopKey&);
     sai_object_id_t getLocalNextHopId(const NextHopKey&);
@@ -82,9 +84,6 @@ private:
 
     NeighborTable m_syncdNeighbors;
     NextHopTable m_syncdNextHops;
-
-    bool addNextHop(const IpAddress&, const string&);
-    bool removeNextHop(const IpAddress&, const string&);
 
     bool addNeighbor(const NeighborEntry&, const MacAddress&);
     bool removeNeighbor(const NeighborEntry&, bool disable = false);
