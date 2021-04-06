@@ -3,9 +3,24 @@
 extern sai_qos_map_api_t *sai_qos_map_api;
 extern sai_object_id_t gSwitchId;
 
+/*
+ * Purpose:     Constructor.
+ *
+ * Description: Initialize Orch base and members.
+ *
+ * Params:      IN  db         - The DB connection to Redis.
+ *              IN  tableNames - The Redis tables to handle.
+ *
+ * Returns:     Nothing.
+ */
 CbfOrch::CbfOrch(DBConnector *db,
                  const vector<table_name_with_pri_t> &tableNames) :
-    Orch(db, tableNames) {}
+    Orch(db, tableNames),
+    m_dscp_map(MapHandler::DSCP),
+    m_exp_map(MapHandler::EXP)
+{
+    SWSS_LOG_ENTER();
+}
 
 /*
  * Purpose:     Perform the operations requested by APPL_DB users.
@@ -25,11 +40,11 @@ void CbfOrch::doTask(Consumer &consumer)
 
     if (table_name == APP_DSCP_TO_FC_MAP_TABLE_NAME)
     {
-        doDscpTask(consumer);
+        m_dscp_map.doTask(consumer);
     }
     else if (table_name == APP_EXP_TO_FC_MAP_TABLE_NAME)
     {
-        doExpTask(consumer);
+        m_exp_map.doTask(consumer);
     }
 }
 
@@ -45,7 +60,7 @@ void CbfOrch::doTask(Consumer &consumer)
  *
  * Returns:     Nothing.
  */
-void CbfOrch::doDscpTask(Consumer &consumer)
+void MapHandler::doTask(Consumer &consumer)
 {
     SWSS_LOG_ENTER();
 
@@ -55,83 +70,91 @@ void CbfOrch::doDscpTask(Consumer &consumer)
     {
         KeyOpFieldsValuesTuple t = it->second;
 
-        string dscp_map_name = kfvKey(t);
+        string map_id = kfvKey(t);
         string op = kfvOp(t);
-        auto map_it = m_dscpMaps.find(dscp_map_name);
+        auto map_it = find(map_id);
         bool success;
 
         if (op == SET_COMMAND)
         {
-            SWSS_LOG_INFO("Set operator for DSCP_TO_FC map %s",
-                             dscp_map_name.c_str());
+            SWSS_LOG_INFO("Set operator for %s map %s",
+                           getMapName(),
+                           map_id.c_str());
 
-            auto dscp_map_list = extractMap(t, DSCP);
+            auto map_list = extractMap(t);
 
-            if (map_it == m_dscpMaps.end())
+            if (map_it == end())
             {
-                SWSS_LOG_NOTICE("Creating DSCP_TO_FC map %s",
-                                 dscp_map_name.c_str());
+                SWSS_LOG_NOTICE("Creating %s map %s",
+                                 getMapName(),
+                                 map_id.c_str());
 
-                auto sai_oid = addMap(dscp_map_list, DSCP);
+                auto sai_oid = createMap(map_list);
 
                 if (sai_oid != SAI_NULL_OBJECT_ID)
                 {
-                    SWSS_LOG_INFO("Successfully created DSCP_TO_FC map");
-                    m_dscpMaps.emplace(dscp_map_name, sai_oid);
+                    SWSS_LOG_INFO("Successfully created %s map", getMapName());
+                    emplace(map_id, sai_oid);
                     success = true;
                 }
                 else
                 {
-                    SWSS_LOG_ERROR("Failed to create DSCP_TO_FC map %s",
-                                    dscp_map_name.c_str());
+                    SWSS_LOG_ERROR("Failed to create %s map %s",
+                                    getMapName(),
+                                    map_id.c_str());
                     success = false;
                 }
             }
             else
             {
-                SWSS_LOG_NOTICE("Updating existing DSCP_TO_FC map %s",
-                                 dscp_map_name.c_str());
+                SWSS_LOG_NOTICE("Updating existing %s map %s",
+                                 getMapName(),
+                                 map_id.c_str());
 
-                success = updateMap(map_it->second, dscp_map_list);
+                success = updateMap(map_it->second, map_list);
 
                 if (success)
                 {
-                    SWSS_LOG_INFO("Successfully updated DSCP_TO_FC map");
+                    SWSS_LOG_INFO("Successfully updated %s map", getMapName());
                 }
                 else
                 {
-                    SWSS_LOG_ERROR("Failed to update DSCP_TO_FC map %s",
-                                    dscp_map_name.c_str());
+                    SWSS_LOG_ERROR("Failed to update %s map %s",
+                                    getMapName(),
+                                    map_id.c_str());
                 }
             }
 
             // Remove the allocated list
-            delete[] dscp_map_list.list;
+            delete[] map_list.list;
         }
         else if (op == DEL_COMMAND)
         {
-            if (map_it != m_dscpMaps.end())
+            if (map_it != end())
             {
-                SWSS_LOG_NOTICE("Deleting DSCP_TO_FC map %s",
-                                 dscp_map_name.c_str());
+                SWSS_LOG_NOTICE("Deleting %s map %s",
+                                 getMapName(),
+                                 map_id.c_str());
 
                 success = removeMap(map_it->second);
 
                 if (success)
                 {
-                    SWSS_LOG_INFO("Successfully removed DSCP_TO_FC map");
-                    m_dscpMaps.erase(map_it);
+                    SWSS_LOG_INFO("Successfully removed %s map", getMapName());
+                    erase(map_it);
                 }
                 else
                 {
-                    SWSS_LOG_ERROR("Failed to remove DSCP_TO_FC map %s",
-                                    dscp_map_name.c_str());
+                    SWSS_LOG_ERROR("Failed to remove %s map %s",
+                                    getMapName(),
+                                    map_id.c_str());
                 }
             }
             else
             {
-                SWSS_LOG_WARN("Tried to delete inexistent DSCP_TO_FC map %s",
-                               dscp_map_name.c_str());
+                SWSS_LOG_WARN("Tried to delete inexistent %s map %s",
+                               getMapName(),
+                               map_id.c_str());
                 // Mark it as success to remove it from the consumer
                 success = true;
             }
@@ -157,130 +180,16 @@ void CbfOrch::doDscpTask(Consumer &consumer)
 }
 
 /*
- * Purpose:     Perform the EXP_TO_FC_MAP_TABLE operations.
+ * Purpose:     Extract the QoS map from the Redis's field-value pairs.
  *
- * Description: Iterate over the untreated operations list and resolve them.
- *              The operations supported are SET and DEL.  If an operation
- *              could not be resolved, it will either remain in the list, or be
- *              removed, depending on the case.
+ * Description: Iterate over the field-value pairs and create a SAI QoS map.
  *
- * Params:      IN  consumer - The cosumer object.
+ * Params:      IN  t - The field-value pairs.
  *
- * Returns:     Nothing.
+ * Returns:     The SAI QoS map object.
  */
-void CbfOrch::doExpTask(Consumer &consumer)
-{
-    SWSS_LOG_ENTER();
-
-    auto it = consumer.m_toSync.begin();
-
-    while (it != consumer.m_toSync.end())
-    {
-        KeyOpFieldsValuesTuple t = it->second;
-
-        string exp_map_name = kfvKey(t);
-        string op = kfvOp(t);
-        auto map_it = m_expMaps.find(exp_map_name);
-        bool success;
-
-        if (op == SET_COMMAND)
-        {
-            SWSS_LOG_INFO("Set operator for EXP_TO_FC map %s",
-                             exp_map_name.c_str());
-
-            auto exp_map_list = extractMap(t, EXP);
-
-            if (map_it == m_expMaps.end())
-            {
-                SWSS_LOG_NOTICE("Creating EXP_TO_FC map %s",
-                                 exp_map_name.c_str());
-
-                auto sai_oid = addMap(exp_map_list, EXP);
-
-                if (sai_oid != SAI_NULL_OBJECT_ID)
-                {
-                    SWSS_LOG_INFO("Successfully created EXP_TO_FC map");
-                    m_expMaps.emplace(exp_map_name, sai_oid);
-                    success = true;
-                }
-                else
-                {
-                    SWSS_LOG_ERROR("Failed to create EXP_TO_FC map %s",
-                                    exp_map_name.c_str());
-                    success = false;
-                }
-            }
-            else
-            {
-                SWSS_LOG_NOTICE("Updating existing EXP_TO_FC map %s",
-                                 exp_map_name.c_str());
-
-                success = updateMap(map_it->second, exp_map_list);
-
-                if (success)
-                {
-                    SWSS_LOG_INFO("Successfully updated EXP_TO_FC map");
-                }
-                else
-                {
-                    SWSS_LOG_ERROR("Failed to update EXP_TO_FC map %s",
-                                    exp_map_name.c_str());
-                }
-            }
-
-            // Remove the allocated list
-            delete[] exp_map_list.list;
-        }
-        else if (op == DEL_COMMAND)
-        {
-            if (map_it != m_expMaps.end())
-            {
-                SWSS_LOG_NOTICE("Deleting EXP_TO_FC map %s",
-                                 exp_map_name.c_str());
-
-                success = removeMap(map_it->second);
-
-                if (success)
-                {
-                    SWSS_LOG_INFO("Successfully removed EXP_TO_FC map");
-                    m_expMaps.erase(map_it);
-                }
-                else
-                {
-                    SWSS_LOG_ERROR("Failed to remove EXP_TO_FC map %s",
-                                    exp_map_name.c_str());
-                }
-            }
-            else
-            {
-                SWSS_LOG_WARN("Tried to delete inexistent EXP_TO_FC map %s",
-                               exp_map_name.c_str());
-                // Mark it as success to remove it from the consumer
-                success = true;
-            }
-        }
-        else
-        {
-            SWSS_LOG_ERROR("Unknown operation type %s", op.c_str());
-            // Set success to true to remove the operation from the consumer
-            success = true;
-        }
-
-        if (success)
-        {
-            SWSS_LOG_DEBUG("Removing consumer item");
-            it = consumer.m_toSync.erase(it);
-        }
-        else
-        {
-            SWSS_LOG_DEBUG("Keeping consumer item");
-            ++it;
-        }
-    }
-}
-
-sai_qos_map_list_t CbfOrch::extractMap(const KeyOpFieldsValuesTuple &t,
-                                       MapType type) const
+sai_qos_map_list_t MapHandler::extractMap(const KeyOpFieldsValuesTuple &t)
+                                                                          const
 {
     SWSS_LOG_ENTER();
 
@@ -291,22 +200,16 @@ sai_qos_map_list_t CbfOrch::extractMap(const KeyOpFieldsValuesTuple &t,
 
     uint32_t ind = 0;
     for (auto i = fields_values.begin();
-            i != fields_values.end();
-            i++, ind++)
+         i != fields_values.end();
+         i++, ind++)
     {
-        switch (type)
+        if (m_type == DSCP)
         {
-            case DSCP:
-                map_list.list[ind].key.dscp = (uint8_t)stoi(fvField(*i));
-                break;
-
-            case EXP:
-                map_list.list[ind].key.exp = (uint8_t)stoi(fvField(*i));
-                break;
-
-            default:
-                SWSS_LOG_ERROR("Unknown CBF map type");
-                assert(false);
+            map_list.list[ind].key.dscp = (uint8_t)stoi(fvField(*i));
+        }
+        else
+        {
+            map_list.list[ind].key.mpls_exp = (uint8_t)stoi(fvField(*i));
         }
 
         map_list.list[ind].value.fc = (uint8_t)stoi(fvValue(*i));
@@ -315,8 +218,17 @@ sai_qos_map_list_t CbfOrch::extractMap(const KeyOpFieldsValuesTuple &t,
     return map_list;
 }
 
-sai_object_id_t CbfOrch::addMap(const sai_qos_map_list_t &map_list,
-                                MapType type)
+/*
+ * Purpose:     Create a QoS map.
+ *
+ * Description: Create the QoS map over the SAI interface.
+ *
+ * Params:      IN  map_list - The QoS map to create.
+ *
+ * Returns:     The SAI ID for the newly created object or SAI_NULL_OBJECt_ID
+ *              if something goes wrong.
+ */
+sai_object_id_t MapHandler::createMap(const sai_qos_map_list_t &map_list)
 {
     SWSS_LOG_ENTER();
 
@@ -324,8 +236,8 @@ sai_object_id_t CbfOrch::addMap(const sai_qos_map_list_t &map_list,
 
     sai_attribute_t map_attr;
     map_attr.id = SAI_QOS_MAP_ATTR_TYPE;
-    map_attr.value.u32 = type == DSCP ?
-                      SAI_QOS_MAP_TYPE_DSCP_TO_FC : SAI_QOS_MAP_TYPE_EXP_TO_FC;
+    map_attr.value.u32 = m_type == DSCP ?
+                 SAI_QOS_MAP_TYPE_DSCP_TO_FC : SAI_QOS_MAP_TYPE_MPLS_EXP_TO_FC;
     map_attrs.push_back(map_attr);
 
     map_attr.id = SAI_QOS_MAP_ATTR_MAP_TO_VALUE_LIST;
@@ -348,7 +260,18 @@ sai_object_id_t CbfOrch::addMap(const sai_qos_map_list_t &map_list,
     return sai_oid;
 }
 
-bool CbfOrch::updateMap(sai_object_id_t sai_oid,
+/*
+ * Purpose:     Update a QoS map.
+ *
+ * Description: Update a QoS map over the SAI interface.
+ *
+ * Params:      IN  sai_oid  - The SAI ID of the object to update.
+ *              IN  map_list - The QoS map to update the object with.
+ *
+ * Returns:     true,  if the update was successful,
+ *              false, otherwise
+ */
+bool MapHandler::updateMap(sai_object_id_t sai_oid,
                         const sai_qos_map_list_t &map_list)
 {
     SWSS_LOG_ENTER();
@@ -371,7 +294,17 @@ bool CbfOrch::updateMap(sai_object_id_t sai_oid,
     return true;
 }
 
-bool CbfOrch::removeMap(sai_object_id_t sai_oid)
+/*
+ * Purpose:     Delete a QoS map.
+ *
+ * Description: Delete a QoS map over the SAI interface.
+ *
+ * Params:      IN  sai_oid - The SAI ID of the object to delete.
+ *
+ * Returns:     true,  if the delete was successful,
+ *              false, otherwise
+ */
+bool MapHandler::removeMap(sai_object_id_t sai_oid)
 {
     SWSS_LOG_ENTER();
 
