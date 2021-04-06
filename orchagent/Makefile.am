@@ -31,7 +31,7 @@ orchagent_SOURCES = \
             orchdaemon.cpp \
             orch.cpp \
             notifications.cpp \
-            nhgorch.cpp \ 
+            nhgorch.cpp \
             routeorch.cpp \
             neighorch.cpp \
             intfsorch.cpp \
@@ -63,7 +63,8 @@ orchagent_SOURCES = \
             debugcounterorch.cpp \
             natorch.cpp \
             muxorch.cpp \
-            macsecorch.cpp
+            macsecorch.cpp \
+            cbforch.cpp
 
 orchagent_SOURCES += flex_counter/flex_counter_manager.cpp flex_counter/flex_counter_stat_manager.cpp
 orchagent_SOURCES += debug_counter/debug_counter.cpp debug_counter/drop_counter.cpp
