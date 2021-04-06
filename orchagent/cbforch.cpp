@@ -13,10 +13,10 @@ extern sai_object_id_t gSwitchId;
  *
  * Returns:     Nothing.
  */
-CbfOrch::CbfOrch(DBConnector *db, const vector<string> &tableNames) :
+CbfOrch::CbfOrch(swss::DBConnector *db, const vector<string> &tableNames) :
     Orch(db, tableNames),
-    m_dscp_map(MapHandler::DSCP),
-    m_exp_map(MapHandler::EXP)
+    m_dscp_map(MapHandler::Type::DSCP),
+    m_exp_map(MapHandler::Type::EXP)
 {
     SWSS_LOG_ENTER();
 }
@@ -67,7 +67,7 @@ void MapHandler::doTask(Consumer &consumer)
 
     while (it != consumer.m_toSync.end())
     {
-        KeyOpFieldsValuesTuple t = it->second;
+        swss::KeyOpFieldsValuesTuple t = it->second;
 
         string map_id = kfvKey(t);
         string op = kfvOp(t);
@@ -182,13 +182,16 @@ void MapHandler::doTask(Consumer &consumer)
  * Purpose:     Extract the QoS map from the Redis's field-value pairs.
  *
  * Description: Iterate over the field-value pairs and create a SAI QoS map.
+ *              The QoS map object allocates memory on the heap and it is the
+ *              caller's responsibility to free that memory when it no longer
+ *              needs it.
  *
  * Params:      IN  t - The field-value pairs.
  *
  * Returns:     The SAI QoS map object.
  */
-sai_qos_map_list_t MapHandler::extractMap(const KeyOpFieldsValuesTuple &t)
-                                                                          const
+sai_qos_map_list_t MapHandler::extractMap(
+                                   const swss::KeyOpFieldsValuesTuple &t) const
 {
     SWSS_LOG_ENTER();
 
@@ -202,7 +205,7 @@ sai_qos_map_list_t MapHandler::extractMap(const KeyOpFieldsValuesTuple &t)
          i != fields_values.end();
          i++, ind++)
     {
-        if (m_type == DSCP)
+        if (m_type == Type::DSCP)
         {
             map_list.list[ind].key.dscp = (uint8_t)stoi(fvField(*i));
         }
@@ -235,7 +238,7 @@ sai_object_id_t MapHandler::createMap(const sai_qos_map_list_t &map_list)
 
     sai_attribute_t map_attr;
     map_attr.id = SAI_QOS_MAP_ATTR_TYPE;
-    map_attr.value.u32 = m_type == DSCP ?
+    map_attr.value.u32 = (m_type == Type::DSCP) ?
                                 SAI_QOS_MAP_TYPE_DSCP_TO_FORWARDING_CLASS :
                                 SAI_QOS_MAP_TYPE_MPLS_EXP_TO_FORWARDING_CLASS;
     map_attrs.push_back(map_attr);
