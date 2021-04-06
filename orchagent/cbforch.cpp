@@ -45,7 +45,7 @@ void CbfOrch::doTask(Consumer &consumer)
  *
  * Returns:     Nothing.
  */
-void CbfOrch::doTask(Consumer &consumer)
+void CbfOrch::doDscpTask(Consumer &consumer)
 {
     SWSS_LOG_ENTER();
 
@@ -77,7 +77,7 @@ void CbfOrch::doTask(Consumer &consumer)
                 if (sai_oid != SAI_NULL_OBJECT_ID)
                 {
                     SWSS_LOG_INFO("Successfully created DSCP_TO_FC map");
-                    m_dscpMaps.insert(dscp_map_name, sai_oid);
+                    m_dscpMaps.emplace(dscp_map_name, sai_oid);
                     success = true;
                 }
                 else
@@ -146,7 +146,7 @@ void CbfOrch::doTask(Consumer &consumer)
         if (success)
         {
             SWSS_LOG_DEBUG("Removing consumer item");
-            it = consumer.m_toSync(erase(it));
+            it = consumer.m_toSync.erase(it);
         }
         else
         {
@@ -178,27 +178,109 @@ void CbfOrch::doExpTask(Consumer &consumer)
     {
         KeyOpFieldsValuesTuple t = it->second;
 
-        string index = kfvKey(t);
+        string exp_map_name = kfvKey(t);
         string op = kfvOp(t);
+        auto map_it = m_expMaps.find(exp_map_name);
+        bool success;
 
         if (op == SET_COMMAND)
         {
+            SWSS_LOG_INFO("Set operator for EXP_TO_FC map %s",
+                             exp_map_name.c_str());
 
+            auto exp_map_list = extractMap(t, EXP);
+
+            if (map_it == m_expMaps.end())
+            {
+                SWSS_LOG_NOTICE("Creating EXP_TO_FC map %s",
+                                 exp_map_name.c_str());
+
+                auto sai_oid = addMap(exp_map_list, EXP);
+
+                if (sai_oid != SAI_NULL_OBJECT_ID)
+                {
+                    SWSS_LOG_INFO("Successfully created EXP_TO_FC map");
+                    m_expMaps.emplace(exp_map_name, sai_oid);
+                    success = true;
+                }
+                else
+                {
+                    SWSS_LOG_ERROR("Failed to create EXP_TO_FC map %s",
+                                    exp_map_name.c_str());
+                    success = false;
+                }
+            }
+            else
+            {
+                SWSS_LOG_NOTICE("Updating existing EXP_TO_FC map %s",
+                                 exp_map_name.c_str());
+
+                success = updateMap(map_it->second, exp_map_list);
+
+                if (success)
+                {
+                    SWSS_LOG_INFO("Successfully updated EXP_TO_FC map");
+                }
+                else
+                {
+                    SWSS_LOG_ERROR("Failed to update EXP_TO_FC map %s",
+                                    exp_map_name.c_str());
+                }
+            }
+
+            // Remove the allocated list
+            delete[] exp_map_list.list;
         }
         else if (op == DEL_COMMAND)
         {
+            if (map_it != m_expMaps.end())
+            {
+                SWSS_LOG_NOTICE("Deleting EXP_TO_FC map %s",
+                                 exp_map_name.c_str());
 
+                success = removeMap(map_it->second);
+
+                if (success)
+                {
+                    SWSS_LOG_INFO("Successfully removed EXP_TO_FC map");
+                    m_expMaps.erase(map_it);
+                }
+                else
+                {
+                    SWSS_LOG_ERROR("Failed to remove EXP_TO_FC map %s",
+                                    exp_map_name.c_str());
+                }
+            }
+            else
+            {
+                SWSS_LOG_WARN("Tried to delete inexistent EXP_TO_FC map %s",
+                               exp_map_name.c_str());
+                // Mark it as success to remove it from the consumer
+                success = true;
+            }
         }
         else
         {
-            SWSS_LOG_ERROR("Unknown operation type %s\n", op.c_str());
+            SWSS_LOG_ERROR("Unknown operation type %s", op.c_str());
+            // Set success to true to remove the operation from the consumer
+            success = true;
+        }
+
+        if (success)
+        {
+            SWSS_LOG_DEBUG("Removing consumer item");
             it = consumer.m_toSync.erase(it);
+        }
+        else
+        {
+            SWSS_LOG_DEBUG("Keeping consumer item");
+            ++it;
         }
     }
 }
 
 sai_qos_map_list_t CbfOrch::extractMap(const KeyOpFieldsValuesTuple &t,
-                                       MapType type)
+                                       MapType type) const
 {
     SWSS_LOG_ENTER();
 
@@ -233,7 +315,8 @@ sai_qos_map_list_t CbfOrch::extractMap(const KeyOpFieldsValuesTuple &t,
     return map_list;
 }
 
-void CbfOrch::addMap(const sai_qos_map_list_t &map_list, MapType type)
+sai_object_id_t CbfOrch::addMap(const sai_qos_map_list_t &map_list,
+                                MapType type)
 {
     SWSS_LOG_ENTER();
 
