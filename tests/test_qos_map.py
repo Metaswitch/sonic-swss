@@ -102,11 +102,11 @@ class TestDot1p(object):
         assert port_cnt == cnt
 
     def test_cbf(self, dvs):
-        app_db = dvs.get_app_db()
+        cfg_db = dvs.get_config_db()
         asic_db = dvs.get_asic_db()
 
-        dscp_ps = swss.ProducerStateTable(app_db.db_connection, swss.APP_DSCP_TO_FC_MAP_TABLE_NAME)
-        exp_ps = swss.ProducerStateTable(app_db.db_connection, swss.APP_EXP_TO_FC_MAP_TABLE_NAME)
+        dscp_ps = swss.Table(cfg_db.db_connection, swss.CFG_DSCP_TO_FC_MAP_TABLE_NAME)
+        exp_ps = swss.Table(cfg_db.db_connection, swss.CFG_EXP_TO_FC_MAP_TABLE_NAME)
 
         asic_qos_map_ids = asic_db.get_keys("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP")
         asic_qos_map_count = len(asic_qos_map_ids)

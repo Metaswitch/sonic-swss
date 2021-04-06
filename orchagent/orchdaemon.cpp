@@ -281,12 +281,9 @@ bool OrchDaemon::init()
 
     gMacsecOrch = new MACsecOrch(m_applDb, m_stateDb, macsec_app_tables, gPortsOrch);
 
-    const int cbforch_pri = 20;
-    vector<table_name_with_pri_t> cbf_tables = {
-        { APP_DSCP_TO_FC_MAP_TABLE_NAME, cbforch_pri },
-        { APP_EXP_TO_FC_MAP_TABLE_NAME,  cbforch_pri }
-    };
-    gCbfOrch = new CbfOrch(m_applDb, cbf_tables);
+    vector<string> cbf_tables = { CFG_DSCP_TO_FC_MAP_TABLE_NAME,
+                                  CFG_EXP_TO_FC_MAP_TABLE_NAME };
+    gCbfOrch = new CbfOrch(m_configDb, cbf_tables);
 
     /*
      * The order of the orch list is important for state restore of warm start and

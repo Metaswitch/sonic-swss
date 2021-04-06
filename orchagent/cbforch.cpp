@@ -13,8 +13,7 @@ extern sai_object_id_t gSwitchId;
  *
  * Returns:     Nothing.
  */
-CbfOrch::CbfOrch(DBConnector *db,
-                 const vector<table_name_with_pri_t> &tableNames) :
+CbfOrch::CbfOrch(DBConnector *db, const vector<string> &tableNames) :
     Orch(db, tableNames),
     m_dscp_map(MapHandler::DSCP),
     m_exp_map(MapHandler::EXP)
@@ -23,7 +22,7 @@ CbfOrch::CbfOrch(DBConnector *db,
 }
 
 /*
- * Purpose:     Perform the operations requested by APPL_DB users.
+ * Purpose:     Perform the operations requested by CONFIG_DB users.
  *
  * Description: Redirect the operations to the appropriate table handling
  *              method.
@@ -38,11 +37,11 @@ void CbfOrch::doTask(Consumer &consumer)
 
     string table_name = consumer.getTableName();
 
-    if (table_name == APP_DSCP_TO_FC_MAP_TABLE_NAME)
+    if (table_name == CFG_DSCP_TO_FC_MAP_TABLE_NAME)
     {
         m_dscp_map.doTask(consumer);
     }
-    else if (table_name == APP_EXP_TO_FC_MAP_TABLE_NAME)
+    else if (table_name == CFG_EXP_TO_FC_MAP_TABLE_NAME)
     {
         m_exp_map.doTask(consumer);
     }

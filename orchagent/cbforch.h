@@ -38,7 +38,7 @@ private:
 class CbfOrch : public Orch
 {
 public:
-    CbfOrch(DBConnector *db, const vector<table_name_with_pri_t> &tableNames);
+    CbfOrch(DBConnector *db, const vector<string> &tableNames);
 
 private:
     MapHandler m_dscp_map;
