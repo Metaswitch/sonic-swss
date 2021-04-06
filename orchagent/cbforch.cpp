@@ -49,7 +49,7 @@ void CbfOrch::doTask(Consumer &consumer)
 }
 
 /*
- * Purpose:     Perform the DSCP_TO_FC_MAP_TABLE operations.
+ * Purpose:     Perform the map table operations.
  *
  * Description: Iterate over the untreated operations list and resolve them.
  *              The operations supported are SET and DEL.  If an operation
@@ -237,7 +237,8 @@ sai_object_id_t MapHandler::createMap(const sai_qos_map_list_t &map_list)
     sai_attribute_t map_attr;
     map_attr.id = SAI_QOS_MAP_ATTR_TYPE;
     map_attr.value.u32 = m_type == DSCP ?
-                 SAI_QOS_MAP_TYPE_DSCP_TO_FC : SAI_QOS_MAP_TYPE_MPLS_EXP_TO_FC;
+                                SAI_QOS_MAP_TYPE_DSCP_TO_FORWARDING_CLASS :
+                                SAI_QOS_MAP_TYPE_MPLS_EXP_TO_FORWARDING_CLASS;
     map_attrs.push_back(map_attr);
 
     map_attr.id = SAI_QOS_MAP_ATTR_MAP_TO_VALUE_LIST;
