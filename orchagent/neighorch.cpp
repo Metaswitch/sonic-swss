@@ -149,7 +149,7 @@ bool NeighOrch::hasNextHop(const NextHopKey &nexthop)
     return m_syncdNextHops.find(nexthop) != m_syncdNextHops.end();
 }
 
-bool NeighOrch::addNextHop(const NextHopKey &nexthop)
+bool NeighOrch::addNextHop(NextHopKey &nexthop)
 {
     SWSS_LOG_ENTER();
 
@@ -371,11 +371,11 @@ bool NeighOrch::ifChangeInformNextHop(const string &alias, bool if_up)
     return rc;
 }
 
-bool NeighOrch::removeNextHop(const NextHopKey& nexthop)
+bool NeighOrch::removeNextHop(NextHopKey& nexthop)
 {
     SWSS_LOG_ENTER();
 
-    if(m_intfsOrch->isRemoteSystemPortIntf(alias))
+    if(m_intfsOrch->isRemoteSystemPortIntf(nexthop.alias))
     {
         //For remote system ports kernel nexthops are always on inband. Change the key
         Port inbp;
@@ -741,7 +741,8 @@ bool NeighOrch::addNeighbor(const NeighborEntry &neighborEntry, const MacAddress
             gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_IPV6_NEIGHBOR);
         }
 
-        if (!addNextHop(NextHopKey(ip_address, alias)))
+        NextHopKey nexthop(ip_address, alias);
+        if (!addNextHop(nexthop))
         {
             status = sai_neighbor_api->remove_neighbor_entry(&neighbor_entry);
             if (status != SAI_STATUS_SUCCESS)

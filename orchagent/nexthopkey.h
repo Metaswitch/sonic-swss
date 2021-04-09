@@ -28,7 +28,7 @@ struct NextHopKey
             std::string err = "Error converting " + str + " to NextHop";
             throw std::invalid_argument(err);
         }
-        std::size_t label_delimiter = str.find(LABELSTACK_DELIMITER);
+        std::size_t label_delimiter = str.find(LABEL_DELIMITER);
         std::string ip_str;
         if (label_delimiter != std::string::npos)
         {
@@ -69,7 +69,7 @@ struct NextHopKey
             std::string err = "Error converting " + str + " to NextHop";
             throw std::invalid_argument(err);
         }
-        std::size_t label_delimiter = str.find(LABELSTACK_DELIMITER);
+        std::size_t label_delimiter = str.find(LABEL_DELIMITER);
         std::string ip_str;
         if (label_delimiter != std::string::npos)
         {
@@ -98,7 +98,7 @@ struct NextHopKey
         if (!label_stack.empty())
         {
             str += label_stack.to_string();
-            str += LABELSTACK_DELIMITER;
+            str += LABEL_DELIMITER;
         }
         str += ip_address.to_string() + NH_DELIMITER + alias;
         return str;
@@ -110,7 +110,7 @@ struct NextHopKey
         if (!label_stack.empty())
         {
             str += label_stack.to_string();
-            str += LABELSTACK_DELIMITER;
+            str += LABEL_DELIMITER;
         }
         str += (ip_address.to_string() + NH_DELIMITER + alias + NH_DELIMITER +
                 std::to_string(vni) + NH_DELIMITER + mac_address.to_string());
