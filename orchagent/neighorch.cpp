@@ -31,7 +31,7 @@ NeighOrch::NeighOrch(DBConnector *appDb, string tableName, IntfsOrch *intfsOrch,
     SWSS_LOG_ENTER();
 
     m_fdbOrch->attach(this);
-    
+
     if(gMySwitchType == "voq")
     {
         //Add subscriber to process VOQ system neigh
@@ -149,9 +149,11 @@ bool NeighOrch::hasNextHop(const NextHopKey &nexthop)
     return m_syncdNextHops.find(nexthop) != m_syncdNextHops.end();
 }
 
-bool NeighOrch::addNextHop(const NextHopKey &nexthop)
+bool NeighOrch::addNextHop(const NextHopKey &const_nexthop)
 {
     SWSS_LOG_ENTER();
+
+    NextHopKey nexthop = const_nexthop;
 
     Port p;
     if (!gPortsOrch->getPort(nexthop.alias, p))
@@ -371,11 +373,13 @@ bool NeighOrch::ifChangeInformNextHop(const string &alias, bool if_up)
     return rc;
 }
 
-bool NeighOrch::removeNextHop(const NextHopKey& nexthop)
+bool NeighOrch::removeNextHop(const NextHopKey& const_nexthop)
 {
     SWSS_LOG_ENTER();
 
-    if(m_intfsOrch->isRemoteSystemPortIntf(alias))
+    NextHopKey nexthop = const_nexthop;
+
+    if(m_intfsOrch->isRemoteSystemPortIntf(nexthop.alias))
     {
         //For remote system ports kernel nexthops are always on inband. Change the key
         Port inbp;
@@ -741,7 +745,8 @@ bool NeighOrch::addNeighbor(const NeighborEntry &neighborEntry, const MacAddress
             gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_IPV6_NEIGHBOR);
         }
 
-        if (!addNextHop(NextHopKey(ip_address, alias)))
+        NextHopKey nexthop(ip_address, alias);
+        if (!addNextHop(nexthop))
         {
             status = sai_neighbor_api->remove_neighbor_entry(&neighbor_entry);
             if (status != SAI_STATUS_SUCCESS)
@@ -873,7 +878,7 @@ bool NeighOrch::removeNeighbor(const NeighborEntry &neighborEntry, bool disable)
 
     NeighborUpdate update = { neighborEntry, MacAddress(), false };
     notify(SUBJECT_TYPE_NEIGH_CHANGE, static_cast<void *>(&update));
-    
+
     if(gMySwitchType == "voq")
     {
         //Sync the neighbor to delete from the CHASSIS_APP_DB

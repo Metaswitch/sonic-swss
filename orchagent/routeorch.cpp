@@ -628,7 +628,7 @@ void RouteOrch::doPrefixTask(Consumer& consumer)
                     nhg = NextHopGroupKey(nhg_str, overlay_nh);
                 }
 
-                if (ipv.size() == 1 && IpAddress(ipv[0]).isZero())
+                if (ipv.size() == 1 && NextHopKey(ipv[0]).ip_address.isZero())
                 {
                     /* blackhole to be done */
                     if (alsv[0] == "unknown")
@@ -742,7 +742,7 @@ void RouteOrch::doPrefixTask(Consumer& consumer)
 
                 const NextHopGroupKey& nhg = ctx.nhg;
 
-                if (ipv.size() == 1 && IpAddress(ipv[0]).isZero())
+                if (ipv.size() == 1 && NextHopKey(ipv[0]).ip_address.isZero())
                 {
                     if (addRoutePost(ctx, nhg))
                         it_prev = consumer.m_toSync.erase(it_prev);
@@ -1039,7 +1039,7 @@ bool RouteOrch::addNextHopGroup(const NextHopGroupKey &nexthops)
             continue;
         }
 
-        sai_object_id_t next_hop_id = m_neighOrch->getNextHopId(it);
+        next_hop_id = m_neighOrch->getNextHopId(it);
         next_hop_ids.push_back(next_hop_id);
         nhopgroup_members_set[next_hop_id] = it;
     }
@@ -1051,6 +1051,7 @@ bool RouteOrch::addNextHopGroup(const NextHopGroupKey &nexthops)
     nhg_attr.value.s32 = SAI_NEXT_HOP_GROUP_TYPE_ECMP;
     nhg_attrs.push_back(nhg_attr);
 
+    sai_object_id_t next_hop_group_id;
     sai_status_t status = sai_next_hop_group_api->create_next_hop_group(&next_hop_group_id,
                                                                         gSwitchId,
                                                                         (uint32_t)nhg_attrs.size(),
@@ -1342,7 +1343,7 @@ bool RouteOrch::addRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextHops)
         /* We get 3 return values from setFgNhg:
          * 1. success/failure: on addition/modification of nexthop group/members
          * 2. next_hop_id: passed as a param to fn, used for sai route creation
-         * 3. prevNhgWasFineGrained: passed as a param to fn, used to determine transitions 
+         * 3. prevNhgWasFineGrained: passed as a param to fn, used to determine transitions
          * between regular and FG ECMP, this is an optimization to prevent multiple lookups */
         if (!m_fgNhgOrch->setFgNhg(vrf_id, ipPrefix, nextHops, next_hop_id, prevNhgWasFineGrained))
         {
@@ -1533,11 +1534,11 @@ bool RouteOrch::addRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextHops)
 
         if (curNhgIsFineGrained && prevNhgWasFineGrained)
         {
-            /* Don't change route entry if the route is previously fine grained and new nhg is also fine grained. 
+            /* Don't change route entry if the route is previously fine grained and new nhg is also fine grained.
              * We already modifed sai nhg objs as part of setFgNhg to account for nhg change. */
             object_statuses.emplace_back(SAI_STATUS_SUCCESS);
         }
-        else 
+        else
         {
             route_attr.id = SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID;
             route_attr.value.oid = next_hop_id;
@@ -2137,76 +2138,81 @@ void RouteOrch::doLabelTask(Consumer& consumer)
                         remote_macs = fvValue(i);
                 }
                 vector<string>& ipv = ctx.ipv;
-                ipv = tokenize(ips, ',');
-                vector<string> alsv = tokenize(aliases, ',');
-                vector<string> vni_labelv = tokenize(vni_labels, ',');
-                vector<string> rmacv = tokenize(remote_macs, ',');
+                vector<string> alsv;
 
-                /* Resize the ip vector to match ifname vector
-                 * as tokenize(",", ',') will miss the last empty segment. */
-                if (alsv.size() == 0)
+                if (aliases.length() == 0)
                 {
-                    SWSS_LOG_WARN("Skip the route %s, for it has an empty ifname field.", key.c_str());
-                    it = consumer.m_toSync.erase(it);
-                    continue;
-                }
-                else if (alsv.size() != ipv.size())
-                {
-                    SWSS_LOG_NOTICE("Route %s: resize ipv to match alsv, %zd -> %zd.", key.c_str(), ipv.size(), alsv.size());
-                    ipv.resize(alsv.size());
-                }
-
-                for (auto alias : alsv)
-                {
-                    /* skip route to management, docker, loopback
-                     * TODO: for route to loopback interface, the proper
-                     * way is to create loopback interface and then create
-                     * route pointing to it, so that we can traps packets to
-                     * CPU */
-                    if (alias == "eth0" || alias == "docker0" ||
-                        alias == "lo" || !alias.compare(0, strlen(LOOPBACK_PREFIX), LOOPBACK_PREFIX))
-                    {
-                        excp_intfs_flag = true;
-                        break;
-                    }
-                }
-
-                // TODO: cannot trust m_portsOrch->getPortIdByAlias because sometimes alias is empty
-                if (excp_intfs_flag)
-                {
-                    /* If any existing routes are updated to point to the
-                     * above interfaces, remove them from the ASIC. */
-                    if (removeLabelRoute(ctx))
-                        it = consumer.m_toSync.erase(it);
-                    else
-                        it++;
-                    continue;
-                }
-
-                string nhg_str = "";
-                NextHopGroupKey& nhg = ctx.nhg;
-
-                if (overlay_nh == false)
-                {
-                    nhg_str = ipv[0] + NH_DELIMITER + alsv[0];
-
-                    for (uint32_t i = 1; i < ipv.size(); i++)
-                    {
-                        nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + alsv[i];
-                    }
-
-                    nhg = NextHopGroupKey(nhg_str);
+                    // No next hop specified, so just pop the label.
+                    ctx.nhg = NextHopGroupKey();
                 }
                 else
                 {
-                    nhg_str = ipv[0] + NH_DELIMITER + "vni" + alsv[0] + NH_DELIMITER + vni_labelv[0] + NH_DELIMITER + rmacv[0];
-                    for (uint32_t i = 1; i < ipv.size(); i++)
+                    ipv = tokenize(ips, ',');
+                    alsv = tokenize(aliases, ',');
+                    vector<string> vni_labelv = tokenize(vni_labels, ',');
+                    vector<string> rmacv = tokenize(remote_macs, ',');
+
+                    /* Resize the ip vector to match ifname vector
+                     * as tokenize(",", ',') will miss the last empty segment. */
+                    if (alsv.size() != ipv.size())
                     {
-                        nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + "vni" + alsv[i] + NH_DELIMITER + vni_labelv[i] + NH_DELIMITER + rmacv[i];
+                        SWSS_LOG_NOTICE("Route %s: resize ipv to match alsv, %zd -> %zd.", key.c_str(), ipv.size(), alsv.size());
+                        ipv.resize(alsv.size());
                     }
 
-                    nhg = NextHopGroupKey(nhg_str, overlay_nh);
+                    for (auto alias : alsv)
+                    {
+                        /* skip route to management, docker, loopback
+                         * TODO: for route to loopback interface, the proper
+                         * way is to create loopback interface and then create
+                         * route pointing to it, so that we can traps packets to
+                         * CPU */
+                        if (alias == "eth0" || alias == "docker0" ||
+                            alias == "lo" || !alias.compare(0, strlen(LOOPBACK_PREFIX), LOOPBACK_PREFIX))
+                        {
+                            excp_intfs_flag = true;
+                            break;
+                        }
+                    }
+
+                    // TODO: cannot trust m_portsOrch->getPortIdByAlias because sometimes alias is empty
+                    if (excp_intfs_flag)
+                    {
+                        /* If any existing routes are updated to point to the
+                         * above interfaces, remove them from the ASIC. */
+                        if (removeLabelRoute(ctx))
+                            it = consumer.m_toSync.erase(it);
+                        else
+                            it++;
+                        continue;
+                    }
+
+                    string nhg_str = "";
+
+                    if (overlay_nh == false)
+                    {
+                        nhg_str = ipv[0] + NH_DELIMITER + alsv[0];
+
+                        for (uint32_t i = 1; i < ipv.size(); i++)
+                        {
+                            nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + alsv[i];
+                        }
+
+                        ctx.nhg = NextHopGroupKey(nhg_str);
+                    }
+                    else
+                    {
+                        nhg_str = ipv[0] + NH_DELIMITER + "vni" + alsv[0] + NH_DELIMITER + vni_labelv[0] + NH_DELIMITER + rmacv[0];
+                        for (uint32_t i = 1; i < ipv.size(); i++)
+                        {
+                            nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + "vni" + alsv[i] + NH_DELIMITER + vni_labelv[i] + NH_DELIMITER + rmacv[i];
+                        }
+
+                        ctx.nhg = NextHopGroupKey(nhg_str, overlay_nh);
+                    }
                 }
+
+                NextHopGroupKey& nhg = ctx.nhg;
 
                 if (ipv.size() == 1 && NextHopKey(ipv[0]).ip_address.isZero())
                 {
@@ -2314,7 +2320,7 @@ void RouteOrch::doLabelTask(Consumer& consumer)
 
                 const NextHopGroupKey& nhg = ctx.nhg;
 
-                if (ipv.size() == 1 && IpAddress(ipv[0]).isZero())
+                if (ipv.size() == 1 && NextHopKey(ipv[0]).ip_address.isZero())
                 {
                     if (addLabelRoutePost(ctx, nhg))
                         it_prev = consumer.m_toSync.erase(it_prev);
@@ -2406,8 +2412,13 @@ bool RouteOrch::addLabelRoute(LabelRouteBulkContext& ctx, const NextHopGroupKey 
 
     auto it_route = m_syncdLabelRoutes.at(vrf_id).find(label);
 
+    /* The route has no next hop specified so just pop the label */
+    if (nextHops.getSize() == 0)
+    {
+        next_hop_id = 0;
+    }
     /* The route is pointing to a next hop */
-    if (nextHops.getSize() == 1)
+    else if (nextHops.getSize() == 1)
     {
         NextHopKey nexthop(nextHops.to_string());
         if (nexthop.ip_address.isZero())
@@ -2513,24 +2524,6 @@ bool RouteOrch::addLabelRoute(LabelRouteBulkContext& ctx, const NextHopGroupKey 
     }
     else
     {
-        /* Set the packet action to forward when there was no next hop (dropped) */
-        if (it_route->second.getSize() == 0)
-        {
-            vector<sai_attribute_t> inseg_attrs;
-            inseg_attr.id = SAI_INSEG_ENTRY_ATTR_NEXT_HOP_ID;
-            inseg_attr.value.oid = next_hop_id;
-            inseg_attrs.push_back(inseg_attr);
-            inseg_attr.id = SAI_INSEG_ENTRY_ATTR_NUM_OF_POP;
-            inseg_attr.value.u32 = 1;
-            inseg_attrs.push_back(inseg_attr);
-
-            inseg_attr.id = SAI_INSEG_ENTRY_ATTR_PACKET_ACTION;
-            inseg_attr.value.s32 = SAI_PACKET_ACTION_FORWARD;
-
-            object_statuses.emplace_back();
-            gLabelRouteBulker.set_entry_attribute(&object_statuses.back(), &inseg_entry, &inseg_attr);
-        }
-
         inseg_attr.id = SAI_INSEG_ENTRY_ATTR_NEXT_HOP_ID;
         inseg_attr.value.oid = next_hop_id;
 

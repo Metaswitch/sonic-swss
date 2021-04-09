@@ -13,8 +13,9 @@ public:
     {
         m_overlay_nexthops = false;
         auto nhv = tokenize(nexthops, NHG_DELIMITER);
-        for (const auto &nh : nhv)
+        for (const auto &nh_str : nhv)
         {
+            auto nh = NextHopKey(nh_str);
             m_nexthops.insert(nh);
         }
     }
@@ -22,7 +23,7 @@ public:
     /* ip_string|if_alias|vni|router_mac separated by ',' */
     NextHopGroupKey(const std::string &nexthops, bool overlay_nh)
     {
-        m_overlay_nexthops = true;
+        m_overlay_nexthops = overlay_nh;
         auto nhv = tokenize(nexthops, NHG_DELIMITER);
         for (const auto &nh_str : nhv)
         {

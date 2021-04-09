@@ -7,6 +7,7 @@
 
 #define NH_DELIMITER '@'
 #define NHG_DELIMITER ','
+#define LABELSTACK_DELIMITER '+'
 #define VRF_PREFIX "Vrf"
 extern IntfsOrch *gIntfsOrch;
 
@@ -119,12 +120,12 @@ struct NextHopKey
 
     bool operator<(const NextHopKey &o) const
     {
-        return tie(ip_address, alias, vni, mac_address) < tie(o.ip_address, o.alias, o.vni, o.mac_address);
+        return tie(ip_address, alias, vni, mac_address, label_stack) < tie(o.ip_address, o.alias, o.vni, o.mac_address, o.label_stack);
     }
 
     bool operator==(const NextHopKey &o) const
     {
-        return (ip_address == o.ip_address) && (alias == o.alias) && (vni == o.vni) && (mac_address == o.mac_address);
+        return (ip_address == o.ip_address) && (alias == o.alias) && (vni == o.vni) && (mac_address == o.mac_address) && (label_stack == o.label_stack);
     }
 
     bool operator!=(const NextHopKey &o) const
