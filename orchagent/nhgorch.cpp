@@ -116,7 +116,6 @@ void NhgOrch::doTask(Consumer& consumer)
         {
             string ips;
             string aliases;
-            string weights;
 
             /* Get group's next hop IPs and aliases */
             for (auto i : kfvFieldsValues(t))
@@ -126,9 +125,6 @@ void NhgOrch::doTask(Consumer& consumer)
 
                 if (fvField(i) == "ifname")
                     aliases = fvValue(i);
-
-                if (fvField(i) == "weight")
-                    weights = fvValue(i);
             }
 
             /* Split ips and alaises strings into vectors of tokens. */
@@ -143,7 +139,7 @@ void NhgOrch::doTask(Consumer& consumer)
                 nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + alsv[i];
             }
 
-            NextHopGroupKey nhg_key = NextHopGroupKey(nhg_str, weights);
+            NextHopGroupKey nhg_key = NextHopGroupKey(nhg_str);
 
             /* If the group does not exist, create one. */
             if (nhg_it == m_syncdNextHopGroups.end())
@@ -558,50 +554,9 @@ NextHopGroupMember& NextHopGroupMember::operator=(NextHopGroupMember&& nhgm)
     SWSS_LOG_ENTER();
 
     std::swap(m_nh_key, nhgm.m_nh_key);
-    m_weight = nhgm.m_weight;
     std::swap(m_gm_id, nhgm.m_gm_id);
 
     return *this;
-}
-
-/*
- * Purpose:     Update the weight of a member.
- *
- * Description: Set the new member's weight and if the member is synced, update
- *              the SAI attribute as well.
- *
- * Params:      IN  weight - The weight of the next hop group member.
- *
- * Returns:     true, if the operation was successful;
- *              false, otherwise.
- */
-bool NextHopGroupMember::updateWeight(uint8_t weight)
-{
-    SWSS_LOG_ENTER();
-    SWSS_LOG_INFO("Update group member %s weight from %u to %u",
-                    m_nh_key.to_string().c_str(),
-                    m_weight,
-                    weight);
-
-    bool success = true;
-
-    m_weight = weight;
-
-    if (isSynced())
-    {
-        SWSS_LOG_INFO("Updating SAI weight attribute");
-
-        sai_attribute_t nhgm_attr;
-        nhgm_attr.id = SAI_NEXT_HOP_GROUP_MEMBER_ATTR_WEIGHT;
-        nhgm_attr.value.s32 = m_weight;
-
-        sai_status_t status = sai_next_hop_group_api->
-                set_next_hop_group_member_attribute(m_gm_id, &nhgm_attr);
-        success = status == SAI_STATUS_SUCCESS;
-    }
-
-    SWSS_LOG_INFO("Returning %d", success);
-    return success;
 }
 
 /*
@@ -1227,16 +1182,8 @@ bool NextHopGroup::update(const NextHopGroupKey& nhg_key)
                                 nh_key.to_string().c_str());
                 removed_nh_keys.insert(nh_key);
             }
-            /* If the member is updated, update it's weight. */
             else
             {
-                if (!mbr_it.second.updateWeight(new_nhgm_it->second))
-                {
-                    SWSS_LOG_WARN("Failed to update member %s weight",
-                                nh_key.to_string().c_str());
-                    return false;
-                }
-
                 /*
                  * Erase the member from the new members list as it already
                  * exists.
@@ -1284,7 +1231,7 @@ bool NextHopGroup::update(const NextHopGroupKey& nhg_key)
 /*
  * Purpose:     Create the attributes vector for a next hop group member.
  *
- * Description: Create the group ID, next hop ID and weight attributes.
+ * Description: Create the group ID and next hop ID attributes.
  *
  * Params:      IN  nhgm - The next hop group member.
  *
@@ -1306,10 +1253,6 @@ vector<sai_attribute_t> NextHopGroup::createNhgmAttrs(
     /* Fill in the next hop ID. */
     nhgm_attr.id = SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID;
     nhgm_attr.value.oid = nhgm.getNhId();
-    nhgm_attrs.push_back(nhgm_attr);
-
-    nhgm_attr.id = SAI_NEXT_HOP_GROUP_MEMBER_ATTR_WEIGHT;
-    nhgm_attr.value.s32 = nhgm.getWeight();
     nhgm_attrs.push_back(nhgm_attr);
 
     return nhgm_attrs;

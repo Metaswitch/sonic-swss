@@ -621,7 +621,7 @@ void RouteOrch::doPrefixTask(Consumer& consumer)
                             nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + alsv[i];
                         }
 
-                        nhg = NextHopGroupKey(nhg_str, weights);
+                        nhg = NextHopGroupKey(nhg_str);
                     }
                     else
                     {
@@ -631,7 +631,7 @@ void RouteOrch::doPrefixTask(Consumer& consumer)
                             nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + "vni" + alsv[i] + NH_DELIMITER + vni_labelv[i] + NH_DELIMITER + rmacv[i];
                         }
 
-                        nhg = NextHopGroupKey(nhg_str, overlay_nh, weights);
+                        nhg = NextHopGroupKey(nhg_str, overlay_nh);
                     }
                 }
                 else

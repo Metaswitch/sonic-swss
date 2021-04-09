@@ -4,6 +4,7 @@
 #include "ipaddress.h"
 #include "tokenize.h"
 #include "label.h"
+#include "intfsorch.h"
 
 #define NH_DELIMITER '@'
 #define NHG_DELIMITER ','
