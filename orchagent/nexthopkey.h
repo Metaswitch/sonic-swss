@@ -4,6 +4,7 @@
 #include "ipaddress.h"
 #include "tokenize.h"
 #include "label.h"
+#include "intfsorch.h"
 
 #define NH_DELIMITER '@'
 #define NHG_DELIMITER ','
@@ -24,6 +25,8 @@ struct NextHopKey
     NextHopKey(const IpAddress &ip, const std::string &alias) : ip_address(ip), alias(alias), vni(0), mac_address() {}
     NextHopKey(const std::string &str)
     {
+        SWSS_LOG_ENTER();
+
         if (str.find(NHG_DELIMITER) != string::npos)
         {
             std::string err = "Error converting " + str + " to NextHop";
@@ -33,16 +36,19 @@ struct NextHopKey
         std::string ip_str;
         if (label_delimiter != std::string::npos)
         {
+            SWSS_LOG_INFO("Labeled next hop");
             label_stack = LabelStack(str.substr(0, label_delimiter));
             ip_str = str.substr(label_delimiter+1);
         }
         else
         {
+            SWSS_LOG_INFO("Unlabeled next hop");
             ip_str = str;
         }
         auto keys = tokenize(ip_str, NH_DELIMITER);
         vni = 0;
         mac_address = MacAddress();
+
         if (keys.size() == 1)
         {
             ip_address = keys[0];
@@ -63,6 +69,7 @@ struct NextHopKey
             throw std::invalid_argument(err);
         }
     }
+
     NextHopKey(const std::string &str, bool overlay_nh)
     {
         if (str.find(NHG_DELIMITER) != string::npos)
@@ -136,6 +143,11 @@ struct NextHopKey
     bool isIntfNextHop() const
     {
         return (ip_address.getV4Addr() == 0);
+    }
+
+    NextHopKey ipKey() const
+    {
+        return NextHopKey(ip_address, alias);
     }
 };
 
