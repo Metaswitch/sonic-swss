@@ -48,8 +48,8 @@ public:
     ~NeighOrch();
 
     bool hasNextHop(const NextHopKey&);
-    bool addNextHop(NextHopKey&);
-    bool removeNextHop(NextHopKey&);
+    bool addNextHop(const NextHopKey&);
+    bool removeNextHop(const NextHopKey&);
 
     sai_object_id_t getNextHopId(const NextHopKey&);
     sai_object_id_t getLocalNextHopId(const NextHopKey&);

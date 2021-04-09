@@ -35,16 +35,19 @@ struct NextHopKey
         std::string ip_str;
         if (label_delimiter != std::string::npos)
         {
+            SWSS_LOG_INFO("Labeled next hop");
             label_stack = LabelStack(str.substr(0, label_delimiter));
             ip_str = str.substr(label_delimiter+1);
         }
         else
         {
+            SWSS_LOG_INFO("Unlabeled next hop");
             ip_str = str;
         }
         auto keys = tokenize(ip_str, NH_DELIMITER);
         vni = 0;
         mac_address = MacAddress();
+
         if (keys.size() == 1)
         {
             ip_address = keys[0];
@@ -139,6 +142,11 @@ struct NextHopKey
     bool isIntfNextHop() const
     {
         return (ip_address.getV4Addr() == 0);
+    }
+
+    NextHopKey ipKey() const
+    {
+        return NextHopKey(ip_address, alias);
     }
 };
 

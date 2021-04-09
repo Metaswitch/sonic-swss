@@ -8,18 +8,15 @@ class NextHopGroupMember
 public:
     NextHopGroupMember(const std::pair<NextHopKey, uint8_t>& nhgm) :
         m_nh_key(nhgm.first),
-        m_weight(nhgm.second),
         m_gm_id(SAI_NULL_OBJECT_ID) {}
 
     /* Constructors / Assignment operators. */
-    NextHopGroupMember(const NextHopKey& nh_key, uint8_t weight) :
+    NextHopGroupMember(const NextHopKey& nh_key) :
         m_nh_key(nh_key),
-        m_weight(weight),
         m_gm_id(SAI_NULL_OBJECT_ID) {}
 
     NextHopGroupMember(NextHopGroupMember&& nhgm) :
         m_nh_key(std::move(nhgm.m_nh_key)),
-        m_weight(nhgm.m_weight),
         m_gm_id(nhgm.m_gm_id)
     { nhgm.m_gm_id = SAI_NULL_OBJECT_ID; }
 
@@ -35,16 +32,12 @@ public:
     /* Destructor. */
     virtual ~NextHopGroupMember();
 
-    /* Update member's weight and update the SAI attribute as well. */
-    bool updateWeight(uint8_t weight);
-
     /* Sync / Desync. */
     void sync(sai_object_id_t gm_id);
     void desync();
 
     /* Getters / Setters. */
     inline const NextHopKey& getNhKey() const { return m_nh_key; }
-    inline uint8_t getWeight() const { return m_weight; }
     sai_object_id_t getNhId() const;
     inline sai_object_id_t getGmId() const { return m_gm_id; }
     inline bool isSynced() const { return m_gm_id != SAI_NULL_OBJECT_ID; }
@@ -56,16 +49,12 @@ public:
     std::string to_string() const
     {
         return m_nh_key.to_string() +
-                ", weight: " + std::to_string(m_weight) +
                 ", SAI ID: " + std::to_string(m_gm_id);
     }
 
 private:
     /* The key of the next hop of this member. */
     NextHopKey m_nh_key;
-
-    /* Weight of the next hop. */
-    uint8_t m_weight;
 
     /* The group member SAI ID for this member. */
     sai_object_id_t m_gm_id;

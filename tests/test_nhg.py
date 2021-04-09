@@ -97,7 +97,6 @@ class TestNextHopGroup(object):
         return "00:00:00:00:00:0" + str(i)
 
     def config_intf(self, i, dvs):
->>>>>>> 5caaa59... NHG split
         config_db = dvs.get_config_db()
         fvs = {'NULL': 'NULL'}
 

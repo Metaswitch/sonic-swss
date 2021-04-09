@@ -1045,39 +1045,38 @@ bool RouteOrch::addNextHopGroup(const NextHopGroupKey &nexthops)
     }
 
     vector<sai_object_id_t> next_hop_ids;
-    std::map<NextHopKey, uint8_t> next_hop_map = nexthops.getNhsWithWts();
-    std::map<sai_object_id_t, std::pair<NextHopKey, uint8_t>>
-                                                        nhopgroup_members_set;
+    set<NextHopKey> next_hop_set = nexthops.getNextHops();
+    std::map<sai_object_id_t, NextHopKey> nhopgroup_members_set;
 
     /* Assert each IP address exists in m_syncdNextHops table,
      * and add the corresponding next_hop_id to next_hop_ids. */
-    for (auto it : next_hop_map)
+    for (auto it : next_hop_set)
     {
-        const NextHopKey& nh_key = it.first;
         sai_object_id_t next_hop_id;
-        if (m_neighOrch->hasNextHop(nh_key))
+        if (m_neighOrch->hasNextHop(it))
         {
-            next_hop_id = m_neighOrch->getNextHopId(nh_key);
+            next_hop_id = m_neighOrch->getNextHopId(it);
         }
         /* See if there is an IP neighbor nexthop */
-        else if (nh_key.label_stack.getSize() &&
-                 m_neighOrch->hasNextHop(NextHopKey(nh_key.ip_address, nh_key.alias)))
+        else if (it.label_stack.getSize() &&
+                 m_neighOrch->hasNextHop(NextHopKey(it.ip_address, it.alias)))
         {
-            m_neighOrch->addNextHop(nh_key);
-            next_hop_id = m_neighOrch->getNextHopId(nh_key);
+            m_neighOrch->addNextHop(it);
+            next_hop_id = m_neighOrch->getNextHopId(it);
         }
         else
         {
             SWSS_LOG_WARN("Failed to get next hop %s in %s",
-                    nh_key.to_string().c_str(), nexthops.to_string().c_str());
+                    it.to_string().c_str(), nexthops.to_string().c_str());
             return false;
         }
         // skip next hop group member create for neighbor from down port
-        if (m_neighOrch->isNextHopFlagSet(nh_key, NHFLAGS_IFDOWN))
+        if (m_neighOrch->isNextHopFlagSet(it, NHFLAGS_IFDOWN))
         {
             continue;
         }
 
+        next_hop_id = m_neighOrch->getNextHopId(it);
         next_hop_ids.push_back(next_hop_id);
         nhopgroup_members_set[next_hop_id] = it;
     }
@@ -1149,13 +1148,13 @@ bool RouteOrch::addNextHopGroup(const NextHopGroupKey &nexthops)
         gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP_MEMBER);
 
         // Save the membership into next hop structure
-        next_hop_group_entry.nhopgroup_members[nhopgroup_members_set.find(nhid)->second.first] =
+        next_hop_group_entry.nhopgroup_members[nhopgroup_members_set.find(nhid)->second] =
                                                                 nhgm_id;
     }
 
     /* Increment the ref_count for the next hops used by the next hop group. */
-    for (auto it : next_hop_map)
-        m_neighOrch->increaseNextHopRefCount(it.first);
+    for (auto it : next_hop_set)
+        m_neighOrch->increaseNextHopRefCount(it);
 
     /*
      * Initialize the next hop group structure with ref_count as 0. This
@@ -1278,12 +1277,12 @@ bool RouteOrch::updateNextHopRoutes(const NextHopKey& nextHop, uint32_t& numRout
         for (auto rt_entry : rt_table.second)
         {
             // Skip routes with ecmp nexthops
-            if (rt_entry.second.getSize() > 1)
+            if (rt_entry.second.nhg_key.getSize() > 1)
             {
                 continue;
             }
 
-            if (rt_entry.second.contains(nextHop))
+            if (rt_entry.second.nhg_key.contains(nextHop))
             {
                 SWSS_LOG_INFO("Updating route %s during nexthop status change",
                                rt_entry.first.to_string().c_str());
@@ -1328,7 +1327,7 @@ void RouteOrch::addTempRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextH
          * a labeled one, which are created by RouteOrch or NhgOrch if the IP
          * next hop exists.
          */
-        if (!m_neighOrch->hasNextHop(*it))
+        if (!m_neighOrch->hasNextHop(it->ipKey()))
         {
             SWSS_LOG_INFO("Failed to get next hop %s for %s",
                    (*it).to_string().c_str(), ipPrefix.to_string().c_str());
@@ -2584,7 +2583,7 @@ void RouteOrch::addTempLabelRoute(LabelRouteBulkContext& ctx, const NextHopGroup
          * a labeled one, which are created by RouteOrch or NhgOrch if the IP
          * next hop exists.
          */
-        if (!m_neighOrch->hasNextHop(*it))
+        if (!m_neighOrch->hasNextHop(it->ipKey()))
         {
             SWSS_LOG_INFO("Failed to get next hop %s for %u",
                    (*it).to_string().c_str(), label);

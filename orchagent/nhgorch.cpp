@@ -664,11 +664,11 @@ NextHopGroup::NextHopGroup(const NextHopGroupKey& key) :
     SWSS_LOG_INFO("Creating next hop group %s", m_key.to_string().c_str());
 
     /* Parse the key and create the members. */
-    for (const auto& it : m_key.getNhsWithWts())
+    for (const auto& it : m_key.getNextHops())
     {
         SWSS_LOG_INFO("Adding next hop %s to the group",
-                        it.first.to_string().c_str());
-        m_members.emplace(it.first, NextHopGroupMember(it));
+                        it.to_string().c_str());
+        m_members.emplace(it, NextHopGroupMember(it));
     }
 }
 
@@ -1164,7 +1164,7 @@ bool NextHopGroup::update(const NextHopGroupKey& nhg_key)
         /* Update the key. */
         m_key = nhg_key;
 
-        std::map<NextHopKey, uint8_t> new_nhgms = nhg_key.getNhsWithWts();
+        std::set<NextHopKey> new_nh_keys = nhg_key.getNextHops();
         std::set<NextHopKey> removed_nh_keys;
 
         /* Mark the members that need to be removed. */
@@ -1173,10 +1173,10 @@ bool NextHopGroup::update(const NextHopGroupKey& nhg_key)
             const NextHopKey& nh_key = mbr_it.first;
 
             /* Look for the existing member inside the new ones. */
-            const auto& new_nhgm_it = new_nhgms.find(nh_key);
+            const auto& new_nh_key_it = new_nh_keys.find(nh_key);
 
             /* If the member is not found, then it needs to be removed. */
-            if (new_nhgm_it == new_nhgms.end())
+            if (new_nh_key_it == new_nh_keys.end())
             {
                 SWSS_LOG_INFO("Add member %s to be desynced",
                                 nh_key.to_string().c_str());
@@ -1188,7 +1188,7 @@ bool NextHopGroup::update(const NextHopGroupKey& nhg_key)
                  * Erase the member from the new members list as it already
                  * exists.
                  */
-                new_nhgms.erase(new_nhgm_it);
+                new_nh_keys.erase(new_nh_key_it);
             }
         }
 
@@ -1207,9 +1207,9 @@ bool NextHopGroup::update(const NextHopGroupKey& nhg_key)
         }
 
         /* Add any new members to the group. */
-        for (const auto& it : new_nhgms)
+        for (const auto& it : new_nh_keys)
         {
-            m_members.emplace(it.first, NextHopGroupMember(it));
+            m_members.emplace(it, NextHopGroupMember(it));
         }
 
         /*

@@ -151,9 +151,11 @@ bool NeighOrch::hasNextHop(const NextHopKey &nexthop)
     return m_syncdNextHops.find(nexthop) != m_syncdNextHops.end();
 }
 
-bool NeighOrch::addNextHop(NextHopKey &nexthop)
+bool NeighOrch::addNextHop(const NextHopKey &const_nexthop)
 {
     SWSS_LOG_ENTER();
+
+    NextHopKey nexthop = {const_nexthop.ip_address, const_nexthop.alias};
 
     Port p;
     if (!gPortsOrch->getPort(nexthop.alias, p))
@@ -375,9 +377,11 @@ bool NeighOrch::ifChangeInformNextHop(const string &alias, bool if_up)
     return rc;
 }
 
-bool NeighOrch::removeNextHop(NextHopKey& nexthop)
+bool NeighOrch::removeNextHop(const NextHopKey& const_nexthop)
 {
     SWSS_LOG_ENTER();
+
+    NextHopKey nexthop = {const_nexthop.ip_address, const_nexthop.alias};
 
     if(m_intfsOrch->isRemoteSystemPortIntf(nexthop.alias))
     {
