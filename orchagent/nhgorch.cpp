@@ -654,6 +654,20 @@ void NextHopGroupMember::desync()
     m_gm_id = SAI_NULL_OBJECT_ID;
     gCrmOrch->decCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP_MEMBER);
     gNeighOrch->decreaseNextHopRefCount(m_nh_key);
+
+    /*
+     * If the labeled next hop is unreferenced, delete it from NeighOrch as
+     * NhgOrch and RouteOrch are the ones controlling it's lifetime.  They both
+     * watch over these labeled next hops, so it doesn't matter who created
+     * them as they're both doing the same checks before deleting a labeled
+     * next hop.
+     */
+    if (isLabeled() && (gNeighOrch->getNextHopRefCount(m_nh_key) == 0))
+    {
+        SWSS_LOG_INFO("Delete labeled next hop %s",
+                      m_nh_key.to_string().c_str());
+        gNeighOrch->removeNextHop(m_nh_key);
+    }
 }
 
 /*
@@ -675,20 +689,6 @@ NextHopGroupMember::~NextHopGroupMember()
      * it.
      */
     assert(!isSynced());
-
-    /*
-     * If the labeled next hop is unreferenced, delete it from NeighOrch as
-     * NhgOrch and RouteOrch are the ones controlling it's lifetime.  They both
-     * watch over these labeled next hops, so it doesn't matter who created
-     * them as they're both doing the same checks before deleting a labeled
-     * next hop.
-     */
-    if (isLabeled() && (gNeighOrch->getNextHopRefCount(m_nh_key) == 0))
-    {
-        SWSS_LOG_INFO("Delete labeled next hop %s",
-                        m_nh_key.to_string().c_str());
-        gNeighOrch->removeNextHop(m_nh_key);
-    }
 }
 
 /*
