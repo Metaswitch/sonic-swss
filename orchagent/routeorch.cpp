@@ -2231,22 +2231,25 @@ bool RouteOrch::removeOverlayNextHops(sai_object_id_t vrf_id, const NextHopGroup
     SWSS_LOG_NOTICE("Remove overlay Nexthop %s", ol_nextHops.to_string().c_str());
     for (auto &tunnel_nh : ol_nextHops.getNextHops())
     {
-        if (!m_neighOrch->getNextHopRefCount(tunnel_nh))
+        if (m_neighOrch->hasNextHop(tunnel_nh))
         {
-            if(!m_neighOrch->removeTunnelNextHop(tunnel_nh))
+            if (!m_neighOrch->getNextHopRefCount(tunnel_nh))
             {
-                SWSS_LOG_ERROR("Tunnel Nexthop %s delete failed", ol_nextHops.to_string().c_str());
-            }
-            else
-            {
-                m_neighOrch->removeOverlayNextHop(tunnel_nh);
-                SWSS_LOG_INFO("Tunnel Nexthop %s delete success", ol_nextHops.to_string().c_str());
-                SWSS_LOG_INFO("delete remote vtep %s", tunnel_nh.to_string(true).c_str());
-                status = deleteRemoteVtep(vrf_id, tunnel_nh);
-                if (status == false)
+                if(!m_neighOrch->removeTunnelNextHop(tunnel_nh))
                 {
-                    SWSS_LOG_ERROR("Failed to delete remote vtep %s ecmp", tunnel_nh.to_string(true).c_str());
-                    return false;
+                    SWSS_LOG_ERROR("Tunnel Nexthop %s delete failed", ol_nextHops.to_string().c_str());
+                }
+                else
+                {
+                    m_neighOrch->removeOverlayNextHop(tunnel_nh);
+                    SWSS_LOG_INFO("Tunnel Nexthop %s delete success", ol_nextHops.to_string().c_str());
+                    SWSS_LOG_INFO("delete remote vtep %s", tunnel_nh.to_string(true).c_str());
+                    status = deleteRemoteVtep(vrf_id, tunnel_nh);
+                    if (status == false)
+                    {
+                        SWSS_LOG_ERROR("Failed to delete remote vtep %s ecmp", tunnel_nh.to_string(true).c_str());
+                        return false;
+                    }
                 }
             }
         }
