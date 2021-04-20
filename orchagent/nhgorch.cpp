@@ -638,7 +638,9 @@ NextHopGroupMember::~NextHopGroupMember()
      * them as they're both doing the same checks before deleting a labeled
      * next hop.
      */
-    if (isLabeled() && (gNeighOrch->getNextHopRefCount(m_nh_key) == 0))
+    if (isLabeled() &&
+        gNeighOrch->hasNextHop(m_nh_key) &&
+        (gNeighOrch->getNextHopRefCount(m_nh_key) == 0))
     {
         SWSS_LOG_INFO("Delete labeled next hop %s",
                         m_nh_key.to_string().c_str());

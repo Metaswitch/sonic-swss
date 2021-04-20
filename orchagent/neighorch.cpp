@@ -438,14 +438,14 @@ bool NeighOrch::removeNextHop(const NextHopKey& nh)
 
     gFgNhgOrch->invalidNextHopInNextHopGroup(nexthop);
 
-    if (m_syncdNextHops[nexthop].ref_count > 0)
+    if (m_syncdNextHops.at(nexthop).ref_count > 0)
     {
         SWSS_LOG_ERROR("Failed to remove still referenced next hop %s",
                        nexthop.to_string().c_str());
         return false;
     }
 
-    sai_object_id_t next_hop_id = m_syncdNextHops[nexthop].next_hop_id;
+    sai_object_id_t next_hop_id = m_syncdNextHops.at(nexthop).next_hop_id;
     sai_status_t status = sai_next_hop_api->remove_next_hop(next_hop_id);
 
     /*
@@ -496,9 +496,7 @@ bool NeighOrch::removeOverlayNextHop(const NextHopKey &nexthop)
 {
     SWSS_LOG_ENTER();
 
-    assert(hasNextHop(nexthop));
-
-    if (m_syncdNextHops[nexthop].ref_count > 0)
+    if (m_syncdNextHops.at(nexthop).ref_count > 0)
     {
         SWSS_LOG_ERROR("Failed to remove still referenced next hop %s on %s",
                    nexthop.ip_address.to_string().c_str(), nexthop.alias.c_str());
@@ -521,8 +519,6 @@ sai_object_id_t NeighOrch::getLocalNextHopId(const NextHopKey& nexthop)
 
 sai_object_id_t NeighOrch::getNextHopId(const NextHopKey &nexthop)
 {
-    assert(hasNextHop(nexthop));
-
     /*
      * The nexthop id could be varying depending on the use-case
      * For e.g, a route could have a direct neighbor but may require
@@ -534,18 +530,16 @@ sai_object_id_t NeighOrch::getNextHopId(const NextHopKey &nexthop)
     {
         return nhid;
     }
-    return m_syncdNextHops[nexthop].next_hop_id;
+    return m_syncdNextHops.at(nexthop).next_hop_id;
 }
 
 int NeighOrch::getNextHopRefCount(const NextHopKey &nexthop)
 {
-    assert(hasNextHop(nexthop));
-    return m_syncdNextHops[nexthop].ref_count;
+    return m_syncdNextHops.at(nexthop).ref_count;
 }
 
 void NeighOrch::increaseNextHopRefCount(const NextHopKey &nexthop, uint32_t count)
 {
-    assert(hasNextHop(nexthop));
     if (m_syncdNextHops.find(nexthop) != m_syncdNextHops.end())
     {
         m_syncdNextHops[nexthop].ref_count += count;
@@ -554,7 +548,6 @@ void NeighOrch::increaseNextHopRefCount(const NextHopKey &nexthop, uint32_t coun
 
 void NeighOrch::decreaseNextHopRefCount(const NextHopKey &nexthop, uint32_t count)
 {
-    assert(hasNextHop(nexthop));
     if (m_syncdNextHops.find(nexthop) != m_syncdNextHops.end())
     {
         m_syncdNextHops[nexthop].ref_count -= count;
