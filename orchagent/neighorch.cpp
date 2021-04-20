@@ -389,14 +389,14 @@ bool NeighOrch::removeNextHop(NextHopKey nexthop)
 
     gFgNhgOrch->invalidNextHopInNextHopGroup(nexthop);
 
-    if (m_syncdNextHops[nexthop].ref_count > 0)
+    if (m_syncdNextHops.at(nexthop).ref_count > 0)
     {
         SWSS_LOG_ERROR("Failed to remove still referenced next hop %s",
                        nexthop.to_string().c_str());
         return false;
     }
 
-    sai_object_id_t next_hop_id = m_syncdNextHops[nexthop].next_hop_id;
+    sai_object_id_t next_hop_id = m_syncdNextHops.at(nexthop).next_hop_id;
     sai_status_t status = sai_next_hop_api->remove_next_hop(next_hop_id);
 
     /*
@@ -432,9 +432,7 @@ bool NeighOrch::removeOverlayNextHop(const NextHopKey &nexthop)
 {
     SWSS_LOG_ENTER();
 
-    assert(hasNextHop(nexthop));
-
-    if (m_syncdNextHops[nexthop].ref_count > 0)
+    if (m_syncdNextHops.at(nexthop).ref_count > 0)
     {
         SWSS_LOG_ERROR("Failed to remove still referenced next hop %s on %s",
                    nexthop.ip_address.to_string().c_str(), nexthop.alias.c_str());
@@ -447,26 +445,22 @@ bool NeighOrch::removeOverlayNextHop(const NextHopKey &nexthop)
 
 sai_object_id_t NeighOrch::getNextHopId(const NextHopKey &nexthop)
 {
-    assert(hasNextHop(nexthop));
-    return m_syncdNextHops[nexthop].next_hop_id;
+    return m_syncdNextHops.at(nexthop).next_hop_id;
 }
 
 int NeighOrch::getNextHopRefCount(const NextHopKey &nexthop)
 {
-    assert(hasNextHop(nexthop));
-    return m_syncdNextHops[nexthop].ref_count;
+    return m_syncdNextHops.at(nexthop).ref_count;
 }
 
 void NeighOrch::increaseNextHopRefCount(const NextHopKey &nexthop)
 {
-    assert(hasNextHop(nexthop));
-    m_syncdNextHops[nexthop].ref_count ++;
+    m_syncdNextHops.at(nexthop).ref_count ++;
 }
 
 void NeighOrch::decreaseNextHopRefCount(const NextHopKey &nexthop)
 {
-    assert(hasNextHop(nexthop));
-    m_syncdNextHops[nexthop].ref_count --;
+    m_syncdNextHops.at(nexthop).ref_count --;
 }
 
 bool NeighOrch::getNeighborEntry(const NextHopKey &nexthop, NeighborEntry &neighborEntry, MacAddress &macAddress)
@@ -786,7 +780,7 @@ bool NeighOrch::removeNeighbor(const NeighborEntry &neighborEntry, bool disable)
         return true;
     }
 
-    if (m_syncdNextHops[nexthop].ref_count > 0)
+    if (m_syncdNextHops.at(nexthop).ref_count > 0)
     {
         SWSS_LOG_INFO("Failed to remove still referenced neighbor %s on %s",
                       m_syncdNeighbors[neighborEntry].mac.to_string().c_str(), alias.c_str());
