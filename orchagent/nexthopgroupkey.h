@@ -27,7 +27,8 @@ public:
         }
     }
 
-    NextHopGroupKey(const std::string &nexthops, const std::string& weights = "")
+    NextHopGroupKey(const std::string &nexthops, const std::string& weights = "") :
+        m_overlay_nexthops(false)
     {
         std::vector<std::string> nhv = tokenize(nexthops, NHG_DELIMITER);
         std::vector<std::string> wtv = tokenize(weights, NHG_DELIMITER);
