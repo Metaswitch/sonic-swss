@@ -1155,7 +1155,7 @@ void IntfsOrch::addIp2MeRoute(sai_object_id_t vrf_id, const IpPrefix &ip_prefix)
     sai_route_entry_t unicast_route_entry;
     unicast_route_entry.switch_id = gSwitchId;
     unicast_route_entry.vr_id = vrf_id;
-    copy(unicast_route_entry.destination, ip_prefix.getIp());
+    copy(unicast_route_entry.destination, ip_prefix);
 
     sai_attribute_t attr;
     vector<sai_attribute_t> attrs;
@@ -1178,7 +1178,7 @@ void IntfsOrch::addIp2MeRoute(sai_object_id_t vrf_id, const IpPrefix &ip_prefix)
         throw runtime_error("Failed to create IP2me route.");
     }
 
-    SWSS_LOG_NOTICE("Create IP2me route ip:%s", ip_prefix.getIp().to_string().c_str());
+    SWSS_LOG_NOTICE("Create IP2me route ip:%s mask:%s", ip_prefix.getIp().to_string().c_str(), ip_prefix.getMask().to_string().c_str());
 
     if (unicast_route_entry.destination.addr_family == SAI_IP_ADDR_FAMILY_IPV4)
     {
@@ -1195,7 +1195,7 @@ void IntfsOrch::removeIp2MeRoute(sai_object_id_t vrf_id, const IpPrefix &ip_pref
     sai_route_entry_t unicast_route_entry;
     unicast_route_entry.switch_id = gSwitchId;
     unicast_route_entry.vr_id = vrf_id;
-    copy(unicast_route_entry.destination, ip_prefix.getIp());
+    copy(unicast_route_entry.destination, ip_prefix);
 
     sai_status_t status = sai_route_api->remove_route_entry(&unicast_route_entry);
     if (status != SAI_STATUS_SUCCESS)
@@ -1204,7 +1204,7 @@ void IntfsOrch::removeIp2MeRoute(sai_object_id_t vrf_id, const IpPrefix &ip_pref
         throw runtime_error("Failed to remove IP2me route.");
     }
 
-    SWSS_LOG_NOTICE("Remove packet action trap route ip:%s", ip_prefix.getIp().to_string().c_str());
+    SWSS_LOG_NOTICE("Remove packet action trap route ip:%s, mask:%s", ip_prefix.getIp().to_string().c_str(), ip_prefix.getMask().to_string().c_str());
 
     if (unicast_route_entry.destination.addr_family == SAI_IP_ADDR_FAMILY_IPV4)
     {
