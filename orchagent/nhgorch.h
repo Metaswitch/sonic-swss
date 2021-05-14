@@ -75,9 +75,60 @@ private:
 typedef std::map<NextHopKey, NextHopGroupMember> NhgMembers;
 
 /*
+ * NextHopGroupBase class representing the common base class between
+ * NextHopGroup and CbfNextHopGroup classes.
+ */
+class NextHopGroupBase
+{
+public:
+    NextHopGroupBase();
+    NextHopGroupBase(NextHopGroupBase &&nhg);
+    virtual ~NextHopGroupBase();
+
+    /*
+     * Prevent copying.
+     */
+    NextHopGroupBase(const NextHopGroupBase&) = delete;
+    NextHopGroupBase& operator=(const NextHopGroupBase&) = delete;
+
+    /*
+     * Check if the next hop group is synced or not.
+     */
+    inline bool isSynced() const { return m_id != SAI_NULL_OBJECT_ID; }
+
+    /*
+     * Sync the group, generating a SAI ID.
+     */
+    virtual bool sync() = 0;
+
+    /*
+     * Desync the group, releasing the SAI ID.
+     */
+    virtual bool desync() = 0;
+
+    /* Increment the number of existing groups. */
+    static inline void incCount() { ++m_count; }
+
+    /* Decrement the number of existing groups. */
+    static inline void decCount() { assert(m_count > 0); --m_count; }
+
+    static inline unsigned getCount() { return m_count; }
+
+protected:
+    sai_object_id_t m_id;
+
+    /*
+     * Number of existing NHGs.  Incremented when an object is created and
+     * decremented when an object is destroyed.  This will also account for the
+     * groups created by RouteOrch.
+     */
+    static unsigned m_count;
+};
+
+/*
  * NextHopGroup class representing a next hop group object.
  */
-class NextHopGroup
+class NextHopGroup : public NextHopGroupBase
 {
 public:
     /* Constructors. */
@@ -85,14 +136,11 @@ public:
     NextHopGroup(NextHopGroup&& nhg);
     NextHopGroup& operator=(NextHopGroup&& nhg);
 
-    /* Destructor. */
-    virtual ~NextHopGroup() { desync(); }
-
     /* Sync the group, creating the group's and members SAI IDs. */
-    bool sync();
+    bool sync() override;
 
     /* Desync the group, reseting the group's and members SAI IDs.  */
-    bool desync();
+    bool desync() override;
 
     /*
      * Update the group based on a new next hop group key.  This will also
@@ -110,19 +158,11 @@ public:
     /* Invalidate a next hop in the group, desyncing it. */
     bool invalidateNextHop(const NextHopKey& nh_key);
 
-    /* Increment the number of existing groups. */
-    static inline void incCount() { ++m_count; }
-
-    /* Decrement the number of existing groups. */
-    static inline void decCount() { assert(m_count > 0); --m_count; }
-
     /* Getters / Setters. */
     inline const NextHopGroupKey& getKey() const { return m_key; }
     inline sai_object_id_t getId() const { return m_id; }
-    static inline unsigned int getCount() { return m_count; }
     inline bool isTemp() const { return m_is_temp; }
     inline void setTemp(bool is_temp) { m_is_temp = is_temp; }
-    inline bool isSynced() const { return m_id != SAI_NULL_OBJECT_ID; }
     inline size_t getSize() const { return m_members.size(); }
 
     /* Convert NHG's details to a string. */
@@ -136,21 +176,11 @@ private:
     /* The next hop group key of this group. */
     NextHopGroupKey m_key;
 
-    /* The SAI ID of the group. */
-    sai_object_id_t m_id;
-
     /* Members of this next hop group. */
     NhgMembers m_members;
 
     /* Whether the group is temporary or not. */
     bool m_is_temp;
-
-    /*
-     * Number of existing groups.  Incremented when an object is created and
-     * decremented when an object is destroyed.  This will also account for the
-     * groups created by RouteOrch.
-     */
-    static unsigned int m_count;
 
     /* Add group's members over the SAI API for the given keys. */
     bool syncMembers(const std::set<NextHopKey>& nh_keys);
@@ -199,7 +229,7 @@ public:
     /*
      * Constructor.
      */
-    NhgOrch(DBConnector *db, string tableName);
+    NhgOrch(DBConnector *db, const std::string &tableName);
 
     /* Check if the next hop group given by it's index exists. */
     inline bool hasNhg(const std::string& index) const
@@ -237,6 +267,8 @@ public:
     void incNhgRefCount(const std::string& index);
     void decNhgRefCount(const std::string& index);
 
+    void doTask(Consumer &consumer) override;
+
 private:
 
     /*
@@ -248,6 +280,4 @@ private:
      * The next hop group table.
      */
     NhgTable m_syncdNextHopGroups;
-
-    void doTask(Consumer& consumer);
 };

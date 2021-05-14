@@ -25,7 +25,7 @@ unsigned int NextHopGroup::m_count = 0;
 #define DEFAULT_NUMBER_OF_ECMP_GROUPS   128
 #define DEFAULT_MAX_ECMP_GROUP_SIZE     32
 
-NhgOrch::NhgOrch(DBConnector *db, string tableName) :
+NhgOrch::NhgOrch(DBConnector *db, const std::string &tableName) :
     Orch(db, tableName)
 {
     SWSS_LOG_ENTER();
@@ -148,7 +148,7 @@ void NhgOrch::doTask(Consumer& consumer)
             /* If the group does not exist, create one. */
             if (nhg_it == m_syncdNextHopGroups.end())
             {
-                SWSS_LOG_NOTICE("Adding next hop group %s with %s",
+                SWSS_LOG_INFO("Adding next hop group %s with %s",
                                 index.c_str(),
                                 nhg_str.c_str());
                 /*
@@ -168,7 +168,7 @@ void NhgOrch::doTask(Consumer& consumer)
                     {
                         auto nhg = std::make_unique<NextHopGroup>(
                                                     createTempNhg(nhg_key));
-                        SWSS_LOG_NOTICE("Adding temp next hop group with %s",
+                        SWSS_LOG_INFO("Adding temp next hop group with %s",
                                         nhg->to_string().c_str());
                         if (nhg->sync())
                         {
@@ -214,12 +214,11 @@ void NhgOrch::doTask(Consumer& consumer)
             /* If the group exists, update it. */
             else
             {
-                SWSS_LOG_NOTICE("Update next hop group %s with %s",
+                SWSS_LOG_INFO("Update next hop group %s with %s",
                                 index.c_str(),
                                 nhg_str.c_str());
 
                 const auto& nhg_ptr = nhg_it->second.nhg;
-
 
                 /*
                  * A NHG update should never change the SAI ID of the NHG if it
@@ -310,7 +309,7 @@ void NhgOrch::doTask(Consumer& consumer)
         }
         else if (op == DEL_COMMAND)
         {
-            SWSS_LOG_NOTICE("Deleting next hop group %s", index.c_str());
+            SWSS_LOG_INFO("Deleting next hop group %s", index.c_str());
 
             /* If the group does not exist, do nothing. */
             if (nhg_it == m_syncdNextHopGroups.end())
@@ -343,7 +342,7 @@ void NhgOrch::doTask(Consumer& consumer)
         }
         else
         {
-            SWSS_LOG_ERROR("Unknown operation type %s\n", op.c_str());
+            SWSS_LOG_WARN("Unknown operation type %s", op.c_str());
             /* Mark the operation as successful to consume it. */
             success = true;
         }
@@ -694,6 +693,53 @@ NextHopGroupMember::~NextHopGroupMember()
 }
 
 /*
+ * Purpose: Constructor.
+ *
+ * Params:  None.
+ *
+ * Returns: Nothing.
+ */
+NextHopGroupBase::NextHopGroupBase() : m_id(SAI_NULL_OBJECT_ID)
+{
+    SWSS_LOG_ENTER();
+}
+
+/*
+ * Purpose: Move constructor.
+ *
+ * Params:  IN nhg - The rvalue object.
+ *
+ * Returns: Nothing.
+ */
+NextHopGroupBase::NextHopGroupBase(NextHopGroupBase &&nhg) :
+    m_id(std::move(nhg.m_id))
+{
+    SWSS_LOG_ENTER();
+
+    /*
+     * Invalidate the rvalue SAI ID.
+     */
+    nhg.m_id = SAI_NULL_OBJECT_ID;
+}
+
+/*
+ * Purpose: Destructor.
+ *
+ * Params:  None.
+ *
+ * Returns: Nothing.
+ */
+NextHopGroupBase::~NextHopGroupBase()
+{
+    SWSS_LOG_ENTER();
+
+    /*
+     * Desync the group.
+     */
+    desync();
+}
+
+/*
  * Purpose:     Constructor.
  *
  * Description: Initialize the group's members based on the next hop group key.
@@ -704,7 +750,6 @@ NextHopGroupMember::~NextHopGroupMember()
  */
 NextHopGroup::NextHopGroup(const NextHopGroupKey& key) :
     m_key(key),
-    m_id(SAI_NULL_OBJECT_ID),
     m_is_temp(false)
 {
     SWSS_LOG_ENTER();
@@ -730,14 +775,10 @@ NextHopGroup::NextHopGroup(const NextHopGroupKey& key) :
  */
 NextHopGroup::NextHopGroup(NextHopGroup&& nhg) :
     m_key(std::move(nhg.m_key)),
-    m_id(std::move(nhg.m_id)),
     m_members(std::move(nhg.m_members)),
     m_is_temp(nhg.m_is_temp)
 {
     SWSS_LOG_ENTER();
-
-    /* Invalidate the rvalue SAI ID. */
-    nhg.m_id = SAI_NULL_OBJECT_ID;
 }
 
 /*
