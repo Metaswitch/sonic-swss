@@ -126,9 +126,6 @@ protected:
     sai_object_id_t m_id;
 };
 
-template<>
-std::string NhgMember<std::string>::to_string() const { return m_key; }
-
 class WeightedNhgMember : public NhgMember<NextHopKey>
 {
 public:
