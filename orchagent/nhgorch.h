@@ -2,88 +2,225 @@
 
 #include "orch.h"
 #include "nexthopgroupkey.h"
+#include "crmorch.h"
 
-class NextHopGroupMember
+extern CrmOrch *gCrmOrch;
+
+template <typename Index>
+class NhgMember
 {
 public:
-    NextHopGroupMember(const std::pair<NextHopKey, uint8_t>& nhgm) :
-        m_nh_key(nhgm.first),
-        m_weight(nhgm.second),
-        m_gm_id(SAI_NULL_OBJECT_ID) {}
+    /*
+     * Constructors.
+     */
+    explicit NhgMember(const Index &key) : m_key(key), m_id(SAI_NULL_OBJECT_ID)
+    {
+        SWSS_LOG_ENTER();
+    }
 
-    /* Constructors / Assignment operators. */
-    NextHopGroupMember(const NextHopKey& nh_key, uint8_t weight) :
-        m_nh_key(nh_key),
-        m_weight(weight),
-        m_gm_id(SAI_NULL_OBJECT_ID) {}
+    NhgMember(NhgMember &&nhgm) : m_key(std::move(nhgm.m_key)), m_id(nhgm.m_id)
+    {
+        SWSS_LOG_ENTER();
+        nhgm.m_id = SAI_NULL_OBJECT_ID;
+    }
 
-    NextHopGroupMember(NextHopGroupMember&& nhgm) :
-        m_nh_key(std::move(nhgm.m_nh_key)),
-        m_weight(nhgm.m_weight),
-        m_gm_id(nhgm.m_gm_id)
-    { nhgm.m_gm_id = SAI_NULL_OBJECT_ID; }
+    NhgMember& operator=(NhgMember &&nhgm)
+    {
+        SWSS_LOG_ENTER();
 
-    NextHopGroupMember& operator=(NextHopGroupMember&& nhgm);
+        std::swap(m_key, nhgm.m_key);
+        std::swap(m_id, nhgm.m_id);
+
+        return *this;
+    }
 
     /*
-     * Prevent object copying so we don't end up having multiple objects
-     * referencing the same SAI objects.
+     * Prevent copying.
      */
-    NextHopGroupMember(const NextHopGroupMember&) = delete;
-    void operator=(const NextHopGroupMember&) = delete;
+    NhgMember(const NhgMember&) = delete;
+    void operator=(const NhgMember&) = delete;
+
+    /*
+     * Destructor.
+     */
+    virtual ~NhgMember()
+    {
+        SWSS_LOG_ENTER();
+        assert(!isSynced());
+    }
+
+    /*
+     * Sync the NHG member, setting its SAI ID.
+     */
+    virtual void sync(sai_object_id_t gm_id)
+    {
+        SWSS_LOG_ENTER();
+
+        SWSS_LOG_INFO("Syncing next hop group member %s", to_string().c_str());
+
+        /*
+         * The SAI ID should be updated from invalid to something valid.
+         */
+        if ((m_id != SAI_NULL_OBJECT_ID) || (gm_id == SAI_NULL_OBJECT_ID))
+        {
+            SWSS_LOG_ERROR("Setting invalid SAI ID %lu to next hop group "
+                            "member %s, with current SAI ID %lu",
+                            gm_id, to_string().c_str(), m_id);
+            throw std::logic_error("Invalid SAI ID assigned to next hop group"
+                                    " member");
+        }
+
+        m_id = gm_id;
+        gCrmOrch->incCrmResUsedCounter(
+                                    CrmResourceType::CRM_NEXTHOP_GROUP_MEMBER);
+    }
+
+    /*
+     * Desync the group member, resetting its SAI ID.
+     */
+    virtual void desync()
+    {
+        SWSS_LOG_ENTER();
+
+        /*
+         * The group member should be synced.
+         */
+        if (!isSynced())
+        {
+            SWSS_LOG_ERROR("Desyincing next hop group member %s which is "
+                            "already desynced", to_string().c_str());
+            throw std::logic_error("Desyncing already desynced next hop group"
+                                    " member");
+        }
+
+        m_id = SAI_NULL_OBJECT_ID;
+        gCrmOrch->decCrmResUsedCounter(
+                                    CrmResourceType::CRM_NEXTHOP_GROUP_MEMBER);
+    }
+
+    /*
+     * Getters.
+     */
+    inline Index getKey() const { return m_key; }
+    inline sai_object_id_t getId() const { return m_id; }
+
+    /*
+     * Check whether the group is synced.
+     */
+    inline bool isSynced() const { return m_id != SAI_NULL_OBJECT_ID; }
+
+    /*
+     * Get a string form of the member.
+     */
+    virtual std::string to_string() const = 0;
+
+protected:
+    /*
+     * The index / key of this NHG member.
+     */
+    Index m_key;
+
+    /*
+     * The SAI ID of this NHG member.
+     */
+    sai_object_id_t m_id;
+};
+
+template<>
+std::string NhgMember<std::string>::to_string() const { return m_key; }
+
+class WeightedNhgMember : public NhgMember<NextHopKey>
+{
+public:
+    WeightedNhgMember(const std::pair<NextHopKey, uint8_t>& nhgm) :
+        NhgMember(nhgm.first), m_weight(nhgm.second) {}
+
+    /* Constructors / Assignment operators. */
+    WeightedNhgMember(const NextHopKey& nh_key, uint8_t weight) :
+        NhgMember(nh_key), m_weight(weight) {}
+
+    WeightedNhgMember(WeightedNhgMember&& nhgm) :
+        NhgMember(std::move(nhgm)),
+        m_weight(nhgm.m_weight) {}
+
+    WeightedNhgMember& operator=(WeightedNhgMember&& nhgm);
 
     /* Destructor. */
-    virtual ~NextHopGroupMember();
+    ~WeightedNhgMember();
 
     /* Update member's weight and update the SAI attribute as well. */
     bool updateWeight(uint8_t weight);
 
     /* Sync / Desync. */
-    void sync(sai_object_id_t gm_id);
-    void desync();
+    void sync(sai_object_id_t gm_id) override;
+    void desync() override;
 
     /* Getters / Setters. */
-    inline const NextHopKey& getNhKey() const { return m_nh_key; }
     inline uint8_t getWeight() const { return m_weight; }
     sai_object_id_t getNhId() const;
-    inline sai_object_id_t getGmId() const { return m_gm_id; }
-    inline bool isSynced() const { return m_gm_id != SAI_NULL_OBJECT_ID; }
 
     /* Check if the next hop is labeled. */
-    inline bool isLabeled() const { return !m_nh_key.label_stack.empty(); }
+    inline bool isLabeled() const { return !m_key.label_stack.empty(); }
 
     /* Convert member's details to string. */
-    std::string to_string() const
+    std::string to_string() const override
     {
-        return m_nh_key.to_string() +
+        return m_key.to_string() +
                 ", weight: " + std::to_string(m_weight) +
-                ", SAI ID: " + std::to_string(m_gm_id);
+                ", SAI ID: " + std::to_string(m_id);
     }
 
 private:
-    /* The key of the next hop of this member. */
-    NextHopKey m_nh_key;
-
     /* Weight of the next hop. */
     uint8_t m_weight;
-
-    /* The group member SAI ID for this member. */
-    sai_object_id_t m_gm_id;
 };
 
 /* Map indexed by NextHopKey, containing the SAI ID of the group member. */
-typedef std::map<NextHopKey, NextHopGroupMember> NhgMembers;
+typedef std::map<NextHopKey, WeightedNhgMember> NhgMembers;
 
 /*
  * NextHopGroupBase class representing the common base class between
  * NextHopGroup and CbfNextHopGroup classes.
  */
+template <typename Key, typename MbrIndex, typename Mbr>
 class NextHopGroupBase
 {
 public:
-    NextHopGroupBase();
-    NextHopGroupBase(NextHopGroupBase &&nhg);
-    virtual ~NextHopGroupBase();
+    /*
+     * Constructors.
+     */
+    explicit NextHopGroupBase(const Key &key) :
+        m_key(key),
+        m_id(SAI_NULL_OBJECT_ID)
+    {
+        SWSS_LOG_ENTER();
+    }
+
+    NextHopGroupBase(NextHopGroupBase &&nhg) :
+        m_key(std::move(nhg.m_key)),
+        m_id(nhg.m_id),
+        m_members(std::move(nhg.m_members))
+    {
+        SWSS_LOG_ENTER();
+
+        /*
+         * Invalidate the rvalue SAI ID.
+         */
+        nhg.m_id = SAI_NULL_OBJECT_ID;
+    }
+
+    NextHopGroupBase& operator=(NextHopGroupBase &&nhg)
+    {
+        SWSS_LOG_ENTER();
+
+        std::swap(m_key, nhg.m_key);
+        std::swap(m_id, nhg.m_id);
+        std::swap(m_members, nhg.m_members);
+
+        return *this;
+    }
+
+    virtual ~NextHopGroupBase() = default;
 
     /*
      * Prevent copying.
@@ -106,35 +243,67 @@ public:
      */
     virtual bool desync() = 0;
 
-    /* Increment the number of existing groups. */
-    static inline void incCount() { ++m_count; }
+    /*
+     * Check if the group contains the given member.
+     */
+    inline bool hasMember(const MbrIndex &key) const
+                            { return m_members.find(key) != m_members.end(); }
 
-    /* Decrement the number of existing groups. */
-    static inline void decCount() { assert(m_count > 0); --m_count; }
-
-    static inline unsigned getCount() { return m_count; }
+    /*
+     * Getters.
+     */
+    inline Key getKey() const { return m_key; }
+    inline sai_object_id_t getId() const { return m_id; }
+    inline size_t getSize() const { return m_members.size(); }
 
 protected:
+    /*
+     * The key indexing this object.
+     */
+    Key m_key;
+
+    /*
+     * The SAI ID of this object.
+     */
     sai_object_id_t m_id;
 
     /*
-     * Number of existing NHGs.  Incremented when an object is created and
-     * decremented when an object is destroyed.  This will also account for the
-     * groups created by RouteOrch.
+     * The members of this group.
      */
-    static unsigned m_count;
+    std::map<MbrIndex, Mbr> m_members;
+
+    /*
+     * Sync the given members in the group.
+     */
+    virtual bool syncMembers(const std::set<MbrIndex> &mbr_indexes) = 0;
+
+    /*
+     * Desync the given members from the group.
+     */
+    virtual bool desyncMembers(const std::set<MbrIndex> &mbr_indexes) = 0;
+
+    /*
+     * Get the SAI attributes for creating a next hop group member over SAI.
+     */
+    virtual std::vector<sai_attribute_t> createNhgmAttrs(const Mbr &member)
+                                                                    const = 0;
 };
 
 /*
  * NextHopGroup class representing a next hop group object.
  */
-class NextHopGroup : public NextHopGroupBase
+class NextHopGroup : public NextHopGroupBase<NextHopGroupKey,
+                                            NextHopKey,
+                                            WeightedNhgMember>
 {
 public:
     /* Constructors. */
     explicit NextHopGroup(const NextHopGroupKey& key);
-    NextHopGroup(NextHopGroup&& nhg);
+    NextHopGroup(NextHopGroup&& nhg) :
+                NextHopGroupBase(std::move(nhg)), m_is_temp(nhg.m_is_temp) {}
     NextHopGroup& operator=(NextHopGroup&& nhg);
+
+    ~NextHopGroup() { SWSS_LOG_ENTER(); desync(); }
 
     /* Sync the group, creating the group's and members SAI IDs. */
     bool sync() override;
@@ -148,10 +317,6 @@ public:
      */
     bool update(const NextHopGroupKey& nhg_key);
 
-    /* Check if the group contains the given next hop. */
-    inline bool hasNextHop(const NextHopKey& nh_key) const {
-                            return m_members.find(nh_key) != m_members.end(); }
-
     /* Validate a next hop in the group, syncing it. */
     bool validateNextHop(const NextHopKey& nh_key);
 
@@ -159,11 +324,8 @@ public:
     bool invalidateNextHop(const NextHopKey& nh_key);
 
     /* Getters / Setters. */
-    inline const NextHopGroupKey& getKey() const { return m_key; }
-    inline sai_object_id_t getId() const { return m_id; }
     inline bool isTemp() const { return m_is_temp; }
     inline void setTemp(bool is_temp) { m_is_temp = is_temp; }
-    inline size_t getSize() const { return m_members.size(); }
 
     /* Convert NHG's details to a string. */
     std::string to_string() const
@@ -171,26 +333,34 @@ public:
         return m_key.to_string() + ", SAI ID: " + std::to_string(m_id);
     }
 
+    /* Increment the number of existing groups. */
+    static inline void incCount() { ++m_count; }
+
+    /* Decrement the number of existing groups. */
+    static inline void decCount() { assert(m_count > 0); --m_count; }
+
+    static inline unsigned getCount() { return m_count; }
+
 private:
-
-    /* The next hop group key of this group. */
-    NextHopGroupKey m_key;
-
-    /* Members of this next hop group. */
-    NhgMembers m_members;
-
     /* Whether the group is temporary or not. */
     bool m_is_temp;
 
     /* Add group's members over the SAI API for the given keys. */
-    bool syncMembers(const std::set<NextHopKey>& nh_keys);
+    bool syncMembers(const std::set<NextHopKey>& nh_keys) override;
 
     /* Remove group's members the SAI API from the given keys. */
-    bool desyncMembers(const std::set<NextHopKey>& nh_keys);
+    bool desyncMembers(const std::set<NextHopKey>& nh_keys) override;
 
     /* Create the attributes vector for a next hop group member. */
     vector<sai_attribute_t> createNhgmAttrs(
-                                        const NextHopGroupMember& nhgm) const;
+                                const WeightedNhgMember& nhgm) const override;
+
+    /*
+     * Number of existing NHGs.  Incremented when an object is created and
+     * decremented when an object is destroyed.  This will also account for the
+     * groups created by RouteOrch.
+     */
+    static unsigned m_count;
 };
 
 /*
