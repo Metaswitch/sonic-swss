@@ -7,12 +7,12 @@
 #include "logger.h"
 #include "swssnet.h"
 #include "cbfnhgorch.h"
+#include "noncbfnhgorch.h"
 
 extern sai_object_id_t gSwitchId;
 
 extern PortsOrch *gPortsOrch;
 extern NeighOrch *gNeighOrch;
-extern SwitchOrch *gSwitchOrch;
 extern RouteOrch *gRouteOrch;
 
 extern sai_next_hop_group_api_t* sai_next_hop_group_api;
@@ -30,7 +30,7 @@ extern sai_next_hop_api_t*         sai_next_hop_api;
  *
  * Returns:     Nothing.
  */
-void NhgOrch::doTask(Consumer& consumer)
+void NonCbfNhgOrch::doTask(Consumer& consumer)
 {
     SWSS_LOG_ENTER();
 
@@ -52,7 +52,7 @@ void NhgOrch::doTask(Consumer& consumer)
                         index.c_str(), op.c_str());
 
         bool success;
-        const auto& nhg_it = m_syncdNhgs.find(index);
+        const auto& nhg_it = m_syncedNhgs.find(index);
 
         if (op == SET_COMMAND)
         {
@@ -88,7 +88,7 @@ void NhgOrch::doTask(Consumer& consumer)
             NextHopGroupKey nhg_key = NextHopGroupKey(nhg_str, weights);
 
             /* If the group does not exist, create one. */
-            if (nhg_it == m_syncdNhgs.end())
+            if (nhg_it == m_syncedNhgs.end())
             {
                 SWSS_LOG_INFO("Adding next hop group %s with %s",
                                 index.c_str(),
@@ -102,7 +102,7 @@ void NhgOrch::doTask(Consumer& consumer)
                 * actual group when there are enough resources.
                 */
                 if ((nhg_key.getSize() > 1) &&
-                    (NextHopGroup::getCount() >= m_maxNhgCount))
+                    (NextHopGroup::getSyncedCount() >= NhgOrch::getMaxNhgCount()))
                 {
                     SWSS_LOG_WARN("Next hop group count reached it's limit.");
 
@@ -114,7 +114,7 @@ void NhgOrch::doTask(Consumer& consumer)
                         if (nhg.sync())
                         {
                             SWSS_LOG_INFO("Temporary NHG successfully synced");
-                            m_syncdNhgs.emplace(index,
+                            m_syncedNhgs.emplace(index,
                                     NhgEntry<NextHopGroup>(std::move(nhg)));
                         }
                         else
@@ -147,7 +147,7 @@ void NhgOrch::doTask(Consumer& consumer)
                     if (success)
                     {
                         SWSS_LOG_INFO("NHG successfully synced");
-                        m_syncdNhgs.emplace(index,
+                        m_syncedNhgs.emplace(index,
                                     NhgEntry<NextHopGroup>(std::move(nhg)));
                     }
                 }
@@ -185,7 +185,7 @@ void NhgOrch::doTask(Consumer& consumer)
                  */
                 else if (nhg.isTemp() &&
                          (nhg_key.getSize() > 1) &&
-                         (NextHopGroup::getCount() >= m_maxNhgCount))
+                         (NextHopGroup::getSyncedCount() >= NhgOrch::getMaxNhgCount()))
                 {
                     /*
                      * If the group was updated in such way that the previously
@@ -252,7 +252,7 @@ void NhgOrch::doTask(Consumer& consumer)
             SWSS_LOG_INFO("Deleting next hop group %s", index.c_str());
 
             /* If the group does not exist, do nothing. */
-            if (nhg_it == m_syncdNhgs.end())
+            if (nhg_it == m_syncedNhgs.end())
             {
                 SWSS_LOG_WARN("Unable to find group with key %s to remove",
                                 index.c_str());
@@ -276,7 +276,7 @@ void NhgOrch::doTask(Consumer& consumer)
 
                 if (success)
                 {
-                    m_syncdNhgs.erase(nhg_it);
+                    m_syncedNhgs.erase(nhg_it);
                 }
             }
         }
@@ -311,7 +311,7 @@ void NhgOrch::doTask(Consumer& consumer)
  *              containing groups;
  *              false, otherwise.
  */
-bool NhgOrch::validateNextHop(const NextHopKey& nh_key)
+bool NonCbfNhgOrch::validateNextHop(const NextHopKey& nh_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Validating next hop %s", nh_key.to_string().c_str());
@@ -320,7 +320,7 @@ bool NhgOrch::validateNextHop(const NextHopKey& nh_key)
      * Iterate through all groups and validate the next hop in those who
      * contain it.
      */
-    for (auto& it : m_syncdNhgs)
+    for (auto& it : m_syncedNhgs)
     {
         auto& nhg = it.second.nhg;
 
@@ -360,7 +360,7 @@ bool NhgOrch::validateNextHop(const NextHopKey& nh_key)
  *              containing groups;
  *              false, otherwise.
  */
-bool NhgOrch::invalidateNextHop(const NextHopKey& nh_key)
+bool NonCbfNhgOrch::invalidateNextHop(const NextHopKey& nh_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Invalidating next hop %s", nh_key.to_string().c_str());
@@ -369,7 +369,7 @@ bool NhgOrch::invalidateNextHop(const NextHopKey& nh_key)
      * Iterate through all groups and invalidate the next hop from those who
      * contain it.
      */
-    for (auto& it : m_syncdNhgs)
+    for (auto& it : m_syncedNhgs)
     {
         auto& nhg = it.second.nhg;
 
@@ -681,7 +681,7 @@ bool NextHopGroup::sync()
         gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
 
         /* Increment the number of synced NHGs. */
-        ++m_count;
+        ++m_syncedCount;
 
         /*
         * Try creating the next hop group's members over SAI.
@@ -710,7 +710,7 @@ bool NextHopGroup::sync()
  *
  * Returns:     The created temporary next hop group.
  */
-NextHopGroup NhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
+NextHopGroup NonCbfNhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Syncing temporary group %s", nhg_key.to_string().c_str());
@@ -805,7 +805,7 @@ bool NextHopGroup::desync()
         /* If the operation is successful, release the resources. */
         gCrmOrch->decCrmResUsedCounter(
                                 CrmResourceType::CRM_NEXTHOP_GROUP);
-        --m_count;
+        --m_syncedCount;
     }
 
     /* Reset the group ID. */

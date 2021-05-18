@@ -16,7 +16,7 @@ extern PortsOrch *gPortsOrch;
 extern sai_object_id_t gSwitchId;
 extern CrmOrch *gCrmOrch;
 extern RouteOrch *gRouteOrch;
-extern NhgOrch *gNhgOrch;
+extern NonCbfNhgOrch *gNhgOrch;
 extern FgNhgOrch *gFgNhgOrch;
 extern Directory<Orch*> gDirectory;
 extern string gMySwitchType;

@@ -75,6 +75,11 @@ public:
     inline bool isTemp() const override { SWSS_LOG_ENTER(); return false; }
 
     /*
+     * CBF groups do not have a NextHopGroupkey.
+     */
+    inline NextHopGroupKey getNhgKey() const override { return {}; }
+
+    /*
      * Update the CBF group, including the SAI programming.
      */
     bool update(const set<string> &members,

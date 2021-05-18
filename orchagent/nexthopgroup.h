@@ -8,6 +8,7 @@
 #include "set"
 #include "orch.h"
 #include "crmorch.h"
+#include "nexthopgroupkey.h"
 
 using namespace std;
 
@@ -153,7 +154,8 @@ public:
      * Getters.
      */
     inline sai_object_id_t getId() const { SWSS_LOG_ENTER(); return m_id; }
-    static inline unsigned getCount() { SWSS_LOG_ENTER(); return m_count; }
+    static inline unsigned getSyncedCount()
+                                    { SWSS_LOG_ENTER(); return m_syncedCount; }
 
     /*
      * Sync the group, generating a SAI ID.
@@ -175,11 +177,16 @@ public:
      */
     virtual bool isTemp() const = 0;
 
+    /*
+     * Get the NextHopGroupKey of this object.
+     */
+    virtual NextHopGroupKey getNhgKey() const = 0;
+
     /* Increment the number of existing groups. */
-    static inline void incCount() { SWSS_LOG_ENTER(); ++m_count; }
+    static inline void incSyncedCount() { SWSS_LOG_ENTER(); ++m_syncedCount; }
 
     /* Decrement the number of existing groups. */
-    static void decCount();
+    static void decSyncedCount();
 
 protected:
     /*
@@ -192,7 +199,7 @@ protected:
      * decremented when an object is desynced.  This will also account for the
      * groups created by RouteOrch.
      */
-    static unsigned m_count;
+    static unsigned m_syncedCount;
 };
 
 /*
@@ -291,69 +298,36 @@ struct NhgEntry
 };
 
 /*
- * Base NhgOrch class providing the common resources and methods shared across
- * all NhgOrch classes.
- */
-class NhgOrchBase : public Orch
-{
-public:
-    NhgOrchBase(swss::DBConnector *db, const string &table_name) :
-        Orch(db, table_name) { SWSS_LOG_ENTER(); }
-
-    /*
-     * Set the switch ECMP capabilities.
-     */
-    static void setSwtichEcmpLimit();
-
-    /*
-     * Getters.
-     */
-    static inline unsigned getMaxNhgCount()
-                                    { SWSS_LOG_ENTER(); return m_maxNhgCount; }
-    static inline unsigned getNhgCount()
-                            { SWSS_LOG_ENTER(); return NhgBase::getCount(); }
-
-    /* Increase the number of next hop groups. */
-    void incNhgCount();
-
-    /* Decrease the number of next hop groups. */
-    inline void decNhgCount() { SWSS_LOG_ENTER(); NhgBase::decCount(); }
-
-protected:
-    /*
-     * Switch's maximum number of next hop groups capacity.
-     */
-    static unsigned m_maxNhgCount;
-};
-
-/*
  * Class providing the common functionality shared by all NhgOrch classes.
  */
 template <typename NhgClass>
-class NhgOrchCommon : public NhgOrchBase
+class NhgOrchCommon : public Orch
 {
 public:
     NhgOrchCommon(swss::DBConnector *db, const string &table_name) :
-        NhgOrchBase(db, table_name) { SWSS_LOG_ENTER(); }
+        Orch(db, table_name) { SWSS_LOG_ENTER(); }
     /*
      * Check if the given next hop group index exists.
      */
     inline bool hasNhg(const string &index) const
-     { SWSS_LOG_ENTER(); return m_syncdNhgs.find(index) != m_syncdNhgs.end(); }
+    {
+        SWSS_LOG_ENTER();
+        return m_syncedNhgs.find(index) != m_syncedNhgs.end();
+    }
 
     /*
      * Get the next hop group with the given index.  If the index does not
      * exist in the map, a out_of_range eexception will be thrown.
      */
     inline const NhgClass& getNhg(const string &index) const
-                        { SWSS_LOG_ENTER(); return m_syncdNhgs.at(index).nhg; }
+                    { SWSS_LOG_ENTER(); return m_syncedNhgs.at(index).nhg; }
 
     /* Increase the ref count for a NHG given by it's index. */
     void incNhgRefCount(const string& index)
     {
         SWSS_LOG_ENTER();
 
-        auto& nhg_entry = m_syncdNhgs.at(index);
+        auto& nhg_entry = m_syncedNhgs.at(index);
 
         SWSS_LOG_INFO("Increment group %s ref count from %u to %u",
                         index.c_str(),
@@ -368,7 +342,7 @@ public:
     {
         SWSS_LOG_ENTER();
 
-        auto& nhg_entry = m_syncdNhgs.at(index);
+        auto& nhg_entry = m_syncedNhgs.at(index);
 
         /* Sanity check so we don't overflow. */
         if (nhg_entry.ref_count == 0)
@@ -391,5 +365,5 @@ protected:
     /*
      * Map of synced next hop groups.
      */
-    unordered_map<string, NhgEntry<NhgClass>> m_syncdNhgs;
+    unordered_map<string, NhgEntry<NhgClass>> m_syncedNhgs;
 };

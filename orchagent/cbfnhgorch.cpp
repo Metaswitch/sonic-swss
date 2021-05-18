@@ -42,7 +42,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
                        index.c_str(), op.c_str());
 
         bool success;
-        const auto &cbf_nhg_it = m_syncdNhgs.find(index);
+        const auto &cbf_nhg_it = m_syncedNhgs.find(index);
 
         if (op == SET_COMMAND)
         {
@@ -83,14 +83,14 @@ void CbfNhgOrch::doTask(Consumer& consumer)
             /*
              * If the CBF group does not exist, create it.
              */
-            if (cbf_nhg_it == m_syncdNhgs.end())
+            if (cbf_nhg_it == m_syncedNhgs.end())
             {
                 SWSS_LOG_INFO("Creating the CBF next hop group");
 
                 /*
                  * If we reached the NHG limit, postpone the creation.
                  */
-                if (NhgBase::getCount() >= m_maxNhgCount)
+                if (NhgBase::getSyncedCount() >= NhgOrch::getMaxNhgCount())
                 {
                     SWSS_LOG_WARN("Reached next hop group limit. Postponing "
                                   "creation.");
@@ -106,7 +106,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
                     if (success)
                     {
                         SWSS_LOG_INFO("CBF NHG successfully synced.");
-                        m_syncdNhgs.emplace(index,
+                        m_syncedNhgs.emplace(index,
                                     NhgEntry<CbfNextHopGroup>(move(cbf_nhg)));
                     }
                 }
@@ -128,7 +128,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
             /*
              * If the group doesn't exist, do nothing.
              */
-            if (cbf_nhg_it == m_syncdNhgs.end())
+            if (cbf_nhg_it == m_syncedNhgs.end())
             {
                 SWSS_LOG_WARN("Deleting inexistent CBF NHG %s", index.c_str());
                 /*
@@ -156,7 +156,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
                 if (success)
                 {
                     SWSS_LOG_INFO("Successfully desynced CBF next hop group");
-                    m_syncdNhgs.erase(cbf_nhg_it);
+                    m_syncedNhgs.erase(cbf_nhg_it);
                 }
             }
         }
@@ -369,7 +369,7 @@ bool CbfNextHopGroup::sync()
      * Increment the amount of programmed next hop groups.
      */
     gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
-    incCount();
+    incSyncedCount();
 
     /*
      * Sync the group members.
@@ -444,7 +444,7 @@ bool CbfNextHopGroup::desync()
      * Decrease the number of programmed NHGs.
      */
     gCrmOrch->decCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
-    decCount();
+    decSyncedCount();
 
     /*
      * Reset the group ID.
@@ -617,14 +617,14 @@ bool CbfNextHopGroup::syncMembers(const set<string> &members)
         /*
          * Check if the group exists in NhgOrch.
          */
-        if (!gNhgOrch->hasNhg(key))
+        if (!gNhgOrch->nonCbfNhgOrch.hasNhg(key))
         {
             SWSS_LOG_ERROR("Next hop group %s in CBF next hop group %s does "
                             "not exist", key.c_str(), m_key.c_str());
             return false;
         }
 
-        const auto &nhg = gNhgOrch->getNhg(key);
+        const auto &nhg = gNhgOrch->nonCbfNhgOrch.getNhg(key);
 
         /*
          * Check if the group is synced.
@@ -845,7 +845,7 @@ void CbfNhgMember::sync(sai_object_id_t gm_id)
     SWSS_LOG_ENTER();
 
     NhgMember::sync(gm_id);
-    gNhgOrch->incNhgRefCount(m_key);
+    gNhgOrch->nonCbfNhgOrch.incNhgRefCount(m_key);
 }
 
 /*
@@ -861,7 +861,7 @@ void CbfNhgMember::desync()
     SWSS_LOG_ENTER();
 
     NhgMember::desync();
-    gNhgOrch->decNhgRefCount(m_key);
+    gNhgOrch->nonCbfNhgOrch.decNhgRefCount(m_key);
 }
 
 /*
@@ -876,13 +876,13 @@ sai_object_id_t CbfNhgMember::getNhgId() const
 {
     SWSS_LOG_ENTER();
 
-    if (!gNhgOrch->hasNhg(m_key))
+    if (!gNhgOrch->nonCbfNhgOrch.hasNhg(m_key))
     {
         SWSS_LOG_INFO("NHG %s does not exist", to_string().c_str());
         return SAI_NULL_OBJECT_ID;
     }
 
-    return gNhgOrch->getNhg(m_key).getId();
+    return gNhgOrch->nonCbfNhgOrch.getNhg(m_key).getId();
 }
 
 /*
