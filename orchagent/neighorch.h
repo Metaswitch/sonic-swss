@@ -70,7 +70,6 @@ public:
 
     bool ifChangeInformNextHop(const string &, bool);
     bool isNextHopFlagSet(const NextHopKey &, const uint32_t);
-    bool removeOverlayNextHop(const NextHopKey &);
     void update(SubjectType, void *);
 
     bool addInbandNeighbor(string alias, IpAddress ip_address);

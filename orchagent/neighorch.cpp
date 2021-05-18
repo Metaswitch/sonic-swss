@@ -438,23 +438,6 @@ bool NeighOrch::removeNextHop(const NextHopKey& const_nexthop)
     return true;
 }
 
-bool NeighOrch::removeOverlayNextHop(const NextHopKey &nexthop)
-{
-    SWSS_LOG_ENTER();
-
-    assert(hasNextHop(nexthop));
-
-    if (m_syncdNextHops[nexthop].ref_count > 0)
-    {
-        SWSS_LOG_ERROR("Failed to remove still referenced next hop %s on %s",
-                   nexthop.ip_address.to_string().c_str(), nexthop.alias.c_str());
-        return false;
-    }
-
-    m_syncdNextHops.erase(nexthop);
-    return true;
-}
-
 sai_object_id_t NeighOrch::getLocalNextHopId(const NextHopKey& nexthop)
 {
     if (m_syncdNextHops.find(nexthop) == m_syncdNextHops.end())
@@ -983,6 +966,15 @@ bool NeighOrch::removeTunnelNextHop(const NextHopKey& nh)
 {
     SWSS_LOG_ENTER();
 
+    assert(hasNextHop(nh));
+
+    if (m_syncdNextHops[nh].ref_count > 0)
+    {
+        SWSS_LOG_ERROR("Failed to remove still referenced next hop %s on %s",
+                   nh.ip_address.to_string().c_str(), nh.alias.c_str());
+        return false;
+    }
+
     EvpnNvoOrch* evpn_orch = gDirectory.get<EvpnNvoOrch*>();
     auto vtep_ptr = evpn_orch->getEVPNVtep();
 
@@ -1003,6 +995,8 @@ bool NeighOrch::removeTunnelNextHop(const NextHopKey& nh)
             nh.vni, nh.mac_address.to_string().c_str());
         return false;
     }
+
+    m_syncdNextHops.erase(nh);
 
     SWSS_LOG_NOTICE("Removed Tunnel next hop %s, %s@%d@%s", tun_name.c_str(), nh.ip_address.to_string().c_str(),
             nh.vni, nh.mac_address.to_string().c_str());

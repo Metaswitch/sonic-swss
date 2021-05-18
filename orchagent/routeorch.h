@@ -177,8 +177,8 @@ public:
     bool validnexthopinNextHopGroup(const NextHopKey&, uint32_t&);
     bool invalidnexthopinNextHopGroup(const NextHopKey&, uint32_t&);
 
-    bool createRemoteVtep(sai_object_id_t, const NextHopKey&);
-    bool deleteRemoteVtep(sai_object_id_t, const NextHopKey&);
+    static bool createRemoteVtep(sai_object_id_t, const NextHopKey&);
+    static bool deleteRemoteVtep(sai_object_id_t, const NextHopKey&);
     bool removeOverlayNextHops(sai_object_id_t, const NextHopGroupKey&);
 
     void notifyNextHopChangeObservers(sai_object_id_t, const IpPrefix&, const NextHopGroupKey&, bool);

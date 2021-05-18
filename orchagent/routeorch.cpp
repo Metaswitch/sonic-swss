@@ -1244,7 +1244,6 @@ bool RouteOrch::removeNextHopGroup(const NextHopGroupKey &nexthops)
             }
             else
             {
-                m_neighOrch->removeOverlayNextHop(it);
                 SWSS_LOG_INFO("Tunnel Nexthop %s delete success", nexthops.to_string().c_str());
                 SWSS_LOG_INFO("delete remote vtep %s", it.to_string(true).c_str());
                 status = deleteRemoteVtep(SAI_NULL_OBJECT_ID, it);
@@ -2146,7 +2145,6 @@ bool RouteOrch::removeOverlayNextHops(sai_object_id_t vrf_id, const NextHopGroup
             }
             else
             {
-                m_neighOrch->removeOverlayNextHop(tunnel_nh);
                 SWSS_LOG_INFO("Tunnel Nexthop %s delete success", ol_nextHops.to_string().c_str());
                 SWSS_LOG_INFO("delete remote vtep %s", tunnel_nh.to_string(true).c_str());
                 status = deleteRemoteVtep(vrf_id, tunnel_nh);

@@ -161,18 +161,20 @@ and reflects the LAG ports into the redis under: `LAG_TABLE:<team0>:port`
     nexthop       = *prefix, ;IP addresses separated “,” (empty indicates no gateway)
     ifname        = ifindex? PORT_TABLE.key  ; zero or more separated by “,” (zero indicates no interface)
     weight        = weight_list              ; List of weights.
-    nexthop_group = string ; index within the NEXT_HOP_GROUP_TABLE, used instead of nexthop and intf fields
+    vni_label     = VRF.vni                  ; zero or more separated by ',' (empty value for non-vxlan next-hops)
+    router_mac    = mac_address              ; zero or more remote router MAC address separated by ',' (empty value for non-vxlan next-hops)
+    nexthop_group = string                   ; index within the NEXT_HOP_GROUP_TABLE, used instead of nexthop and intf fields
 
 ---------------------------------------------
 
 ###### LABEL_ROUTE_TABLE
-; Defines schema for MPLS label route table attributes
-key           = LABEL_ROUTE_TABLE:mpls_label ; MPLS label
-; field       = value
-nexthop       = STRING                   ; Comma-separated list of nexthops.
-ifname        = STRING                   ; Comma-separated list of interfaces.
-weight        = STRING                   ; Comma-separated list of weights.
-nexthop_group = string ; index within the NEXT_HOP_GROUP_TABLE, used instead of nexthop and intf fields
+    ; Defines schema for MPLS label route table attributes
+    key           = LABEL_ROUTE_TABLE:mpls_label ; MPLS label
+    ; field       = value
+    nexthop       = STRING                   ; Comma-separated list of nexthops.
+    ifname        = STRING                   ; Comma-separated list of interfaces.
+    weight        = STRING                   ; Comma-separated list of weights.
+    nexthop_group = string ; index within the NEXT_HOP_GROUP_TABLE, used instead of nexthop and intf fields
 
 ---------------------------------------------
 ### NEXT_HOP_GROUP_TABLE
@@ -182,6 +184,8 @@ nexthop_group = string ; index within the NEXT_HOP_GROUP_TABLE, used instead of 
     nexthop       = *prefix, ;IP addresses separated “,” (empty indicates no gateway)
     ifname        = ifindex? PORT_TABLE.key  ; zero or more separated by “,” (zero indicates no interface)
     weight        = weight_list              ; List of weights.
+    vni_label     = VRF.vni                  ; zero or more separated by ',' (empty value for non-vxlan next-hops)
+    router_mac    = mac_address              ; zero or more remote router MAC address separated by ',' (empty value for non-vxlan next-hops)
 
 ---------------------------------------------
 ### NEIGH_TABLE

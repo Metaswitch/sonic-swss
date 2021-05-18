@@ -116,6 +116,9 @@ void NhgOrch::doTask(Consumer& consumer)
         {
             string ips;
             string aliases;
+            string vni_labels;
+            string remote_macs;
+            bool overlay_nh = false;
 
             /* Get group's next hop IPs and aliases */
             for (auto i : kfvFieldsValues(t))
@@ -125,21 +128,45 @@ void NhgOrch::doTask(Consumer& consumer)
 
                 if (fvField(i) == "ifname")
                     aliases = fvValue(i);
+
+                if (fvField(i) == "vni_label") {
+                    vni_labels = fvValue(i);
+                    overlay_nh = true;
+                }
+
+                if (fvField(i) == "router_mac")
+                    remote_macs = fvValue(i);
             }
 
             /* Split ips and alaises strings into vectors of tokens. */
             vector<string> ipv = tokenize(ips, ',');
             vector<string> alsv = tokenize(aliases, ',');
+            vector<string> vni_labelv = tokenize(vni_labels, ',');
+            vector<string> rmacv = tokenize(remote_macs, ',');
 
             /* Create the next hop group key. */
-            string nhg_str = ipv[0] + NH_DELIMITER + alsv[0];
+            string nhg_str;
 
-            for (uint32_t i = 1; i < ipv.size(); i++)
+            if (overlay_nh == false)
             {
-                nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + alsv[i];
+                nhg_str = ipv[0] + NH_DELIMITER + alsv[0];
+
+                for (uint32_t i = 1; i < ipv.size(); i++)
+                {
+                    nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + alsv[i];
+                }
+            }
+            else
+            {
+                nhg_str = ipv[0] + NH_DELIMITER + "vni" + alsv[0] + NH_DELIMITER + vni_labelv[0] + NH_DELIMITER + rmacv[0];
+
+                for (uint32_t i = 1; i < ipv.size(); i++)
+                {
+                    nhg_str += NHG_DELIMITER + ipv[i] + NH_DELIMITER + "vni" + alsv[i] + NH_DELIMITER + vni_labelv[i] + NH_DELIMITER + rmacv[i];
+                }
             }
 
-            NextHopGroupKey nhg_key = NextHopGroupKey(nhg_str);
+            NextHopGroupKey nhg_key = NextHopGroupKey(nhg_str, overlay_nh);
 
             /* If the group does not exist, create one. */
             if (nhg_it == m_syncdNextHopGroups.end())
@@ -755,6 +782,7 @@ bool NextHopGroup::sync()
         else
         {
             m_id = nhgm.getNhId();
+            gNeighOrch->increaseNextHopRefCount(nhgm.getNhKey());
         }
     }
     /* If the key contains more than one NH, create a group. */
@@ -918,6 +946,11 @@ bool NextHopGroup::desync()
         gCrmOrch->decCrmResUsedCounter(
                                 CrmResourceType::CRM_NEXTHOP_GROUP);
         --m_count;
+    }
+    else
+    {
+        const NextHopGroupMember& nhgm = m_members.begin()->second;
+        gNeighOrch->increaseNextHopRefCount(nhgm.getNhKey());
     }
 
     /* Reset the group ID. */
