@@ -1,6 +1,8 @@
 #include "cbfnhgorch.h"
 #include "crmorch.h"
 #include "bulker.h"
+#include "tokenize.h"
+#include "nhgorch.h"
 
 extern sai_object_id_t gSwitchId;
 
@@ -10,12 +12,6 @@ extern CrmOrch *gCrmOrch;
 extern sai_next_hop_group_api_t* sai_next_hop_group_api;
 
 #define FC_MAX_VAL 63
-
-CbfNhgOrch::CbfNhgOrch(DBConnector *db, const std::string &tableName) :
-    Orch(db, tableName)
-{
-    SWSS_LOG_ENTER();
-}
 
 /*
  * Purpose:     Perform the operations requested by APPL_DB users.
@@ -37,21 +33,21 @@ void CbfNhgOrch::doTask(Consumer& consumer)
 
     while (it != consumer.m_toSync.end())
     {
-        KeyOpFieldsValuesTuple t = it->second;
+        swss::KeyOpFieldsValuesTuple t = it->second;
 
-        std::string index = kfvKey(t);
-        std::string op = kfvOp(t);
+        string index = kfvKey(t);
+        string op = kfvOp(t);
 
         SWSS_LOG_INFO("CBF next hop group key %s, op %s",
                        index.c_str(), op.c_str());
 
         bool success;
-        const auto &cbf_nhg_it = m_syncdCbfNhgs.find(index);
+        const auto &cbf_nhg_it = m_syncdNhgs.find(index);
 
         if (op == SET_COMMAND)
         {
-            std::string members;
-            std::string class_map;
+            string members;
+            string class_map;
 
             /*
              * Get CBF group's members and class map.
@@ -76,7 +72,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
              */
             auto t = validateData(members, class_map);
 
-            if (!std::get<0>(t))
+            if (!get<0>(t))
             {
                 SWSS_LOG_ERROR("CBF next hop group %s data is invalid.",
                                index.c_str());
@@ -87,14 +83,14 @@ void CbfNhgOrch::doTask(Consumer& consumer)
             /*
              * If the CBF group does not exist, create it.
              */
-            if (cbf_nhg_it == m_syncdCbfNhgs.end())
+            if (cbf_nhg_it == m_syncdNhgs.end())
             {
                 SWSS_LOG_INFO("Creating the CBF next hop group");
 
                 /*
                  * If we reached the NHG limit, postpone the creation.
                  */
-                if (NextHopGroup::getCount() >= gNhgOrch->getMaxNhgCount())
+                if (NhgBase::getCount() >= m_maxNhgCount)
                 {
                     SWSS_LOG_WARN("Reached next hop group limit. Postponing "
                                   "creation.");
@@ -103,15 +99,15 @@ void CbfNhgOrch::doTask(Consumer& consumer)
                 else
                 {
                     auto cbf_nhg = CbfNextHopGroup(index,
-                                                   std::get<1>(t),
-                                                   std::get<2>(t));
+                                                   get<1>(t),
+                                                   get<2>(t));
                     success = cbf_nhg.sync();
 
                     if (success)
                     {
                         SWSS_LOG_INFO("CBF NHG successfully synced.");
-                        m_syncdCbfNhgs.emplace(index,
-                                              CbfNhgEntry(std::move(cbf_nhg)));
+                        m_syncdNhgs.emplace(index,
+                                    NhgEntry<CbfNextHopGroup>(move(cbf_nhg)));
                     }
                 }
 
@@ -122,8 +118,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
             else
             {
                 SWSS_LOG_INFO("Updating the CBF next hop group");
-                success = cbf_nhg_it->second.cbf_nhg.update(std::get<1>(t),
-                                                            std::get<2>(t));
+                success = cbf_nhg_it->second.nhg.update(get<1>(t), get<2>(t));
             }
         }
         else if (op == DEL_COMMAND)
@@ -133,7 +128,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
             /*
              * If the group doesn't exist, do nothing.
              */
-            if (cbf_nhg_it == m_syncdCbfNhgs.end())
+            if (cbf_nhg_it == m_syncdNhgs.end())
             {
                 SWSS_LOG_WARN("Deleting inexistent CBF NHG %s", index.c_str());
                 /*
@@ -156,12 +151,12 @@ void CbfNhgOrch::doTask(Consumer& consumer)
             else
             {
                 SWSS_LOG_INFO("Removing CBF next hop group");
-                success = cbf_nhg_it->second.cbf_nhg.desync();
+                success = cbf_nhg_it->second.nhg.desync();
 
                 if (success)
                 {
                     SWSS_LOG_INFO("Successfully desynced CBF next hop group");
-                    m_syncdCbfNhgs.erase(cbf_nhg_it);
+                    m_syncdNhgs.erase(cbf_nhg_it);
                 }
             }
         }
@@ -188,16 +183,13 @@ void CbfNhgOrch::doTask(Consumer& consumer)
     }
 }
 
-std::tuple<bool,
-           std::set<std::string>,
-           std::unordered_map<uint8_t, uint8_t>>
-                         CbfNhgOrch::validateData(const std::string &members,
-                                                  const std::string &class_map)
+tuple<bool, set<string>, unordered_map<uint8_t, uint8_t>>
+    CbfNhgOrch::validateData(const string &members, const string &class_map)
 {
     SWSS_LOG_ENTER();
 
-    auto members_vec = tokenize(members, ',');
-    auto class_map_vec = tokenize(class_map, ',');
+    auto members_vec = swss::tokenize(members, ',');
+    auto class_map_vec = swss::tokenize(class_map, ',');
 
     /*
      * Verify that the members and class map are not empty and are of
@@ -208,22 +200,22 @@ std::tuple<bool,
         (members_vec.size() != class_map_vec.size()))
     {
         SWSS_LOG_INFO("CBF NHG data is empty or miss-matched in size.");
-        return std::make_tuple(false,
-                               std::set<std::string>(),
-                               std::unordered_map<uint8_t, uint8_t>());
+        return make_tuple(false,
+                               set<string>(),
+                               unordered_map<uint8_t, uint8_t>());
     }
 
     /*
      * Verify that the members are unique.
      */
-    std::set<std::string> members_set(members_vec.begin(),
+    set<string> members_set(members_vec.begin(),
                                                 members_vec.end());
     if (members_set.size() != members_vec.size())
     {
         SWSS_LOG_INFO("CBF NHG members are not unique.");
-        return std::make_tuple(false,
-                               std::set<std::string>(),
-                               std::unordered_map<uint8_t, uint8_t>());
+        return make_tuple(false,
+                               set<string>(),
+                               unordered_map<uint8_t, uint8_t>());
     }
 
     /*
@@ -232,21 +224,21 @@ std::tuple<bool,
      * 1 and the size of members (inclusive). Also, the FC values
      * should be unique (the same FC can't be mapped more than once).
      */
-    std::unordered_map<uint8_t, uint8_t> class_map_map;
+    unordered_map<uint8_t, uint8_t> class_map_map;
 
     for (const auto &i : class_map_vec)
     {
         /*
          * Check that the mapping is correctly formed.
          */
-        auto tokens = tokenize(i, ':');
+        auto tokens = swss::tokenize(i, ':');
 
         if (tokens.size() != 2)
         {
             SWSS_LOG_INFO("CBF NHG class map is ill-formed");
-            return std::make_tuple(false,
-                                   std::set<std::string>(),
-                                   std::unordered_map<uint8_t, uint8_t>());
+            return make_tuple(false,
+                                   set<string>(),
+                                   unordered_map<uint8_t, uint8_t>());
         }
 
         try
@@ -254,28 +246,28 @@ std::tuple<bool,
             /*
              * Check that the FC value is valid.
              */
-            auto fc = std::stoi(tokens[0]);
+            auto fc = stoi(tokens[0]);
 
             if ((fc < 0) || (fc > FC_MAX_VAL))
             {
                 SWSS_LOG_INFO("CBF NHG class map contains invalid FC %d", fc);
-                return std::make_tuple(false,
-                                       std::set<std::string>(),
-                                       std::unordered_map<uint8_t, uint8_t>());
+                return make_tuple(false,
+                                       set<string>(),
+                                       unordered_map<uint8_t, uint8_t>());
             }
 
             /*
              * Check that the index value is valid.
              */
-            auto index = std::stoi(tokens[1]);
+            auto index = stoi(tokens[1]);
 
             if ((index < 0) || (index >= (int)members_vec.size()))
             {
                 SWSS_LOG_INFO("CBF NHG class map contains invalid index %d",
                               index);
-                return std::make_tuple(false,
-                                       std::set<std::string>(),
-                                       std::unordered_map<uint8_t, uint8_t>());
+                return make_tuple(false,
+                                       set<string>(),
+                                       unordered_map<uint8_t, uint8_t>());
             }
 
             /*
@@ -287,28 +279,28 @@ std::tuple<bool,
             {
                 SWSS_LOG_INFO("CBF NHG class map maps FC %d more than once",
                               fc);
-                return std::make_tuple(false,
-                                       std::set<std::string>(),
-                                       std::unordered_map<uint8_t, uint8_t>());
+                return make_tuple(false,
+                                       set<string>(),
+                                       unordered_map<uint8_t, uint8_t>());
             }
         }
-        catch(const std::exception& e)
+        catch(const exception& e)
         {
             SWSS_LOG_INFO("Failed to convert CBF NHG FC or index to uint8_t.");
-            return std::make_tuple(false,
-                                   std::set<std::string>(),
-                                   std::unordered_map<uint8_t, uint8_t>());
+            return make_tuple(false,
+                                   set<string>(),
+                                   unordered_map<uint8_t, uint8_t>());
         }
     }
 
-    return std::make_tuple(true, members_set, class_map_map);
+    return make_tuple(true, members_set, class_map_map);
 }
 
 CbfNextHopGroup::CbfNextHopGroup(
-                       const std::string &index,
-                       const std::set<std::string> &members,
-                       const std::unordered_map<uint8_t, uint8_t> &class_map) :
-    NextHopGroupBase(index),
+                       const string &index,
+                       const set<string> &members,
+                       const unordered_map<uint8_t, uint8_t> &class_map) :
+    NhgCommon(index),
     m_class_map(class_map)
 {
     SWSS_LOG_ENTER();
@@ -320,8 +312,8 @@ CbfNextHopGroup::CbfNextHopGroup(
 }
 
 CbfNextHopGroup::CbfNextHopGroup(CbfNextHopGroup &&cbf_nhg) :
-    NextHopGroupBase(std::move(cbf_nhg)),
-    m_class_map(std::move(cbf_nhg.m_class_map))
+    NhgCommon(move(cbf_nhg)),
+    m_class_map(move(cbf_nhg.m_class_map))
 {
     SWSS_LOG_ENTER();
 }
@@ -343,7 +335,7 @@ bool CbfNextHopGroup::sync()
      * Create the CBF next hop group over SAI.
      */
     sai_attribute_t nhg_attr;
-    std::vector<sai_attribute_t> nhg_attrs;
+    vector<sai_attribute_t> nhg_attrs;
 
     nhg_attr.id = SAI_NEXT_HOP_GROUP_ATTR_TYPE;
     nhg_attr.value.s32 = SAI_NEXT_HOP_GROUP_TYPE_CLASS_BASED;
@@ -377,12 +369,12 @@ bool CbfNextHopGroup::sync()
      * Increment the amount of programmed next hop groups.
      */
     gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
-    NextHopGroup::incCount();
+    incCount();
 
     /*
      * Sync the group members.
      */
-    std::set<std::string> members;
+    set<string> members;
 
     for (const auto &member : m_members)
     {
@@ -422,7 +414,7 @@ bool CbfNextHopGroup::desync()
     /*
      * Desync the group members.
      */
-    std::set<std::string> members;
+    set<string> members;
 
     for (const auto &member : m_members)
     {
@@ -452,7 +444,7 @@ bool CbfNextHopGroup::desync()
      * Decrease the number of programmed NHGs.
      */
     gCrmOrch->decCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
-    NextHopGroup::decCount();
+    decCount();
 
     /*
      * Reset the group ID.
@@ -471,8 +463,8 @@ bool CbfNextHopGroup::desync()
  * Returns: true, if the update was successful,
  *          false, otherwise.
  */
-bool CbfNextHopGroup::update(const std::set<std::string> &members,
-                        const std::unordered_map<uint8_t, uint8_t> &class_map)
+bool CbfNextHopGroup::update(const set<string> &members,
+                        const unordered_map<uint8_t, uint8_t> &class_map)
 {
     SWSS_LOG_ENTER();
 
@@ -481,7 +473,7 @@ bool CbfNextHopGroup::update(const std::set<std::string> &members,
     /*
      * Update the group members.
      */
-    std::set<std::string> removed_members;
+    set<string> removed_members;
 
     /*
      * Store the members that need to be removed.
@@ -571,7 +563,7 @@ bool CbfNextHopGroup::update(const std::set<std::string> &members,
  * Returns: true, if the operation was successful,
  *          false, otherwise.
  */
-bool CbfNextHopGroup::syncMembers(const std::set<std::string> &members)
+bool CbfNextHopGroup::syncMembers(const set<string> &members)
 {
     SWSS_LOG_ENTER();
 
@@ -584,7 +576,7 @@ bool CbfNextHopGroup::syncMembers(const std::set<std::string> &members)
     {
         SWSS_LOG_ERROR("Trying to sync members of CBF next hop group %s which"
                         " is not synced", m_key.c_str());
-        throw std::logic_error("Syncing members of unsynced CBF next hop "
+        throw logic_error("Syncing members of unsynced CBF next hop "
                                 "group");
     }
 
@@ -594,7 +586,7 @@ bool CbfNextHopGroup::syncMembers(const std::set<std::string> &members)
      */
     ObjectBulker<sai_next_hop_group_api_t> bulker(sai_next_hop_group_api,
                                                     gSwitchId);
-    std::unordered_map<std::string, sai_object_id_t> nhgm_ids;
+    unordered_map<string, sai_object_id_t> nhgm_ids;
     uint8_t idx = 0;
 
     for (const auto &key : members)
@@ -707,7 +699,7 @@ bool CbfNextHopGroup::syncMembers(const std::set<std::string> &members)
  * Returns: true, if the operation was successful,
  *          false, otherwise.
  */
-bool CbfNextHopGroup::desyncMembers(const std::set<std::string> &members)
+bool CbfNextHopGroup::desyncMembers(const set<string> &members)
 {
     SWSS_LOG_ENTER();
 
@@ -719,7 +711,7 @@ bool CbfNextHopGroup::desyncMembers(const std::set<std::string> &members)
      */
     ObjectBulker<sai_next_hop_group_api_t> bulker(sai_next_hop_group_api,
                                                     gSwitchId);
-    std::unordered_map<std::string, sai_status_t> statuses;
+    unordered_map<string, sai_status_t> statuses;
 
     for (const auto &key : members)
     {
@@ -779,7 +771,7 @@ bool CbfNextHopGroup::desyncMembers(const std::set<std::string> &members)
  *
  * Returns: The vector containing the SAI attributes.
  */
-std::vector<sai_attribute_t>
+vector<sai_attribute_t>
             CbfNextHopGroup::createNhgmAttrs(const CbfNhgMember &nhgm) const
 {
     SWSS_LOG_ENTER();
@@ -788,11 +780,11 @@ std::vector<sai_attribute_t>
     {
         SWSS_LOG_ERROR("CBF next hop group %s or next hop group %s are not "
                         "synced", m_key.c_str(), nhgm.to_string().c_str());
-        throw std::logic_error("CBF next hop group member attributes data is "
+        throw logic_error("CBF next hop group member attributes data is "
                                 "insufficient");
     }
 
-    std::vector<sai_attribute_t> attrs;
+    vector<sai_attribute_t> attrs;
     sai_attribute_t attr;
 
     /*
@@ -939,11 +931,4 @@ bool CbfNhgMember::setIndex(uint8_t index)
     }
 
     return true;
-}
-
-CbfNhgEntry::CbfNhgEntry(CbfNextHopGroup &&cbf_nhg) :
-    cbf_nhg(std::move(cbf_nhg)),
-    ref_count(0)
-{
-    SWSS_LOG_ENTER();
 }

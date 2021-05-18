@@ -1,11 +1,13 @@
 #pragma once
 
-#include "nhgorch.h"
+#include "nexthopgroup.h"
 
-class CbfNhgMember : public NhgMember<std::string>
+using namespace std;
+
+class CbfNhgMember : public NhgMember<string>
 {
 public:
-    CbfNhgMember(const std::string &key) : NhgMember(key) {}
+    CbfNhgMember(const string &key) : NhgMember(key) { SWSS_LOG_ENTER(); }
 
     /*
      * Sync the member, setting its SAI ID and incrementing the necessary
@@ -32,7 +34,7 @@ public:
     /*
      * Get a string representation of this member.
      */
-    std::string to_string() const override { return m_key; }
+    string to_string() const override { return m_key; }
 
 private:
     /*
@@ -41,17 +43,15 @@ private:
     uint8_t m_index;
 };
 
-class CbfNextHopGroup : public NextHopGroupBase<std::string,
-                                                std::string,
-                                                CbfNhgMember>
+class CbfNextHopGroup : public NhgCommon<string, string, CbfNhgMember>
 {
 public:
     /*
      * Constructors.
      */
-    CbfNextHopGroup(const std::string &index,
-                    const std::set<std::string> &members,
-                    const std::unordered_map<uint8_t, uint8_t> &class_map);
+    CbfNextHopGroup(const string &index,
+                    const set<string> &members,
+                    const unordered_map<uint8_t, uint8_t> &class_map);
     CbfNextHopGroup(CbfNextHopGroup &&cbf_nhg);
 
     /*
@@ -70,28 +70,35 @@ public:
     bool desync() override;
 
     /*
+     * CBF groups can never be temporary.
+     */
+    inline bool isTemp() const override { SWSS_LOG_ENTER(); return false; }
+
+    /*
      * Update the CBF group, including the SAI programming.
      */
-    bool update(const std::set<std::string> &members,
-                const std::unordered_map<uint8_t, uint8_t> &class_map);
+    bool update(const set<string> &members,
+                const unordered_map<uint8_t, uint8_t> &class_map);
+
+    string to_string() const override { return m_key; }
 
 private:
-    std::unordered_map<uint8_t, uint8_t> m_class_map;
+    unordered_map<uint8_t, uint8_t> m_class_map;
 
     /*
      * Sync the given members over SAI.
      */
-    bool syncMembers(const std::set<std::string> &members) override;
+    bool syncMembers(const set<string> &members) override;
 
     /*
      * Desync the given members from SAI.
      */
-    bool desyncMembers(const std::set<std::string> &members) override;
+    bool desyncMembers(const set<string> &members) override;
 
     /*
      * Get the SAI attributes for creating the members over SAI.
      */
-    std::vector<sai_attribute_t>
+    vector<sai_attribute_t>
                     createNhgmAttrs(const CbfNhgMember &nhg) const override;
 
     /*
@@ -100,33 +107,18 @@ private:
     sai_attribute_t getClassMapAttr() const;
 };
 
-struct CbfNhgEntry
-{
-    /*
-     * Constructor.
-     */
-    explicit CbfNhgEntry(CbfNextHopGroup &&cbf_nhg);
-
-    CbfNextHopGroup cbf_nhg;
-    unsigned ref_count;
-};
-
-class CbfNhgOrch : public Orch
+class CbfNhgOrch : public NhgOrchCommon<CbfNextHopGroup>
 {
 public:
     /*
      * Constructor.
      */
-    CbfNhgOrch(DBConnector *db, const std::string &tableName);
+    CbfNhgOrch(swss::DBConnector *db, const string &tableName) :
+                            NhgOrchCommon(db, tableName) { SWSS_LOG_ENTER(); }
 
     void doTask(Consumer &consumer) override;
 
 private:
-    std::unordered_map<std::string, CbfNhgEntry> m_syncdCbfNhgs;
-
-    static std::tuple<bool,
-                      std::set<std::string>,
-                      std::unordered_map<uint8_t, uint8_t>>
-                                    validateData(const std::string &members,
-                                                 const std::string &class_map);
+    static tuple<bool, set<string>, unordered_map<uint8_t, uint8_t>>
+                validateData(const string &members, const string &class_map);
 };
