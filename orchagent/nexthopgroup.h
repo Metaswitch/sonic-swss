@@ -301,11 +301,9 @@ struct NhgEntry
  * Class providing the common functionality shared by all NhgOrch classes.
  */
 template <typename NhgClass>
-class NhgOrchCommon : public Orch
+class NhgOrchCommon
 {
 public:
-    NhgOrchCommon(swss::DBConnector *db, const string &table_name) :
-        Orch(db, table_name) { SWSS_LOG_ENTER(); }
     /*
      * Check if the given next hop group index exists.
      */

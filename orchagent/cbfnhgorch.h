@@ -115,13 +115,7 @@ private:
 class CbfNhgOrch : public NhgOrchCommon<CbfNextHopGroup>
 {
 public:
-    /*
-     * Constructor.
-     */
-    CbfNhgOrch(swss::DBConnector *db, const string &tableName) :
-                            NhgOrchCommon(db, tableName) { SWSS_LOG_ENTER(); }
-
-    void doTask(Consumer &consumer) override;
+    void doTask(Consumer &consumer);
 
 private:
     static tuple<bool, set<string>, unordered_map<uint8_t, uint8_t>>

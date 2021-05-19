@@ -1,19 +1,14 @@
+#include "noncbfnhgorch.h"
 #include "nhgorch.h"
-#include "switchorch.h"
 #include "neighorch.h"
 #include "crmorch.h"
-#include "routeorch.h"
 #include "bulker.h"
 #include "logger.h"
 #include "swssnet.h"
-#include "cbfnhgorch.h"
-#include "noncbfnhgorch.h"
 
 extern sai_object_id_t gSwitchId;
 
-extern PortsOrch *gPortsOrch;
 extern NeighOrch *gNeighOrch;
-extern RouteOrch *gRouteOrch;
 
 extern sai_next_hop_group_api_t* sai_next_hop_group_api;
 extern sai_next_hop_api_t*         sai_next_hop_api;
@@ -33,11 +28,6 @@ extern sai_next_hop_api_t*         sai_next_hop_api;
 void NonCbfNhgOrch::doTask(Consumer& consumer)
 {
     SWSS_LOG_ENTER();
-
-    if (!gPortsOrch->allPortsReady())
-    {
-        return;
-    }
 
     auto it = consumer.m_toSync.begin();
 

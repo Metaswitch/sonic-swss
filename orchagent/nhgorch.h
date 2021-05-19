@@ -3,6 +3,10 @@
 #include "cbfnhgorch.h"
 #include "noncbfnhgorch.h"
 #include "switchorch.h"
+#include "vector"
+#include "portsorch.h"
+
+using namespace std;
 
 /* Default maximum number of next hop groups */
 #define DEFAULT_NUMBER_OF_ECMP_GROUPS   128
@@ -11,15 +15,15 @@
 extern sai_object_id_t gSwitchId;
 
 extern SwitchOrch *gSwitchOrch;
+extern PortsOrch *gPortsOrch;
 
 extern sai_switch_api_t *sai_switch_api;
 
-class NhgOrch
+class NhgOrch : public Orch
 {
 public:
-    NhgOrch(DBConnector *db) :
-        nonCbfNhgOrch(db, APP_NEXT_HOP_GROUP_TABLE_NAME),
-        cbfNhgOrch(db, APP_CLASS_BASED_NEXT_HOP_GROUP_TABLE_NAME)
+    NhgOrch(DBConnector *db, const vector<string> &table_names) :
+        Orch(db, table_names)
     {
         SWSS_LOG_ENTER();
 
@@ -171,14 +175,36 @@ public:
         }
     }
 
+    void doTask(Consumer &consumer) override
+    {
+        SWSS_LOG_ENTER();
+
+        if (!gPortsOrch->allPortsReady())
+        {
+            return;
+        }
+
+        string table_name = consumer.getTableName();
+
+        if (table_name == APP_NEXT_HOP_GROUP_TABLE_NAME)
+        {
+            nonCbfNhgOrch.doTask(consumer);
+        }
+        else if (table_name == APP_CLASS_BASED_NEXT_HOP_GROUP_TABLE_NAME)
+        {
+            cbfNhgOrch.doTask(consumer);
+        }
+    }
+
+    /*
+     * Orchs dealing with the (non) CBF operations.
+     */
     NonCbfNhgOrch nonCbfNhgOrch;
     CbfNhgOrch cbfNhgOrch;
-
 private:
+
     /*
      * Switch's maximum number of next hop groups capacity.
      */
     static unsigned m_maxNhgCount;
 };
-
-unsigned NhgOrch::m_maxNhgCount = 0;

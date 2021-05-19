@@ -121,12 +121,6 @@ private:
 class NonCbfNhgOrch : public NhgOrchCommon<NextHopGroup>
 {
 public:
-    /*
-     * Constructor.
-     */
-    NonCbfNhgOrch(DBConnector *db, const string &tableName) :
-        NhgOrchCommon(db, tableName) { SWSS_LOG_ENTER(); }
-
     /* Add a temporary next hop group when resources are exhausted. */
     NextHopGroup createTempNhg(const NextHopGroupKey& nhg_key);
 
@@ -134,5 +128,5 @@ public:
     bool validateNextHop(const NextHopKey& nh_key);
     bool invalidateNextHop(const NextHopKey& nh_key);
 
-    void doTask(Consumer &consumer) override;
+    void doTask(Consumer &consumer);
 };
