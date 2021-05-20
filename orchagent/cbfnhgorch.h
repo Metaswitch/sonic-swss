@@ -7,7 +7,8 @@ using namespace std;
 class CbfNhgMember : public NhgMember<string>
 {
 public:
-    CbfNhgMember(const string &key) : NhgMember(key) { SWSS_LOG_ENTER(); }
+    CbfNhgMember(const string &key, uint8_t index) :
+        NhgMember(key), m_index(index) { SWSS_LOG_ENTER(); }
 
     /*
      * Sync the member, setting its SAI ID and incrementing the necessary
@@ -25,6 +26,11 @@ public:
      * Get the NHG ID of this member.
      */
     sai_object_id_t getNhgId() const;
+
+    /*
+     * Get the index of this group member.
+     */
+    uint8_t getIndex() const { return m_index; }
 
     /*
      * Set the index of this member.
@@ -50,7 +56,7 @@ public:
      * Constructors.
      */
     CbfNextHopGroup(const string &index,
-                    const set<string> &members,
+                    const vector<string> &members,
                     const unordered_map<uint8_t, uint8_t> &class_map);
     CbfNextHopGroup(CbfNextHopGroup &&cbf_nhg);
 
@@ -82,7 +88,7 @@ public:
     /*
      * Update the CBF group, including the SAI programming.
      */
-    bool update(const set<string> &members,
+    bool update(const vector<string> &members,
                 const unordered_map<uint8_t, uint8_t> &class_map);
 
     string to_string() const override { return m_key; }
@@ -118,6 +124,6 @@ public:
     void doTask(Consumer &consumer);
 
 private:
-    static tuple<bool, set<string>, unordered_map<uint8_t, uint8_t>>
+    static tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
                 validateData(const string &members, const string &class_map);
 };

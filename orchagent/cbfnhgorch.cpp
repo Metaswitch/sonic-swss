@@ -183,7 +183,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
     }
 }
 
-tuple<bool, set<string>, unordered_map<uint8_t, uint8_t>>
+tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
     CbfNhgOrch::validateData(const string &members, const string &class_map)
 {
     SWSS_LOG_ENTER();
@@ -195,26 +195,24 @@ tuple<bool, set<string>, unordered_map<uint8_t, uint8_t>>
      * Verify that the members and class map are not empty and are of
      * the same size.
      */
-    if (members_vec.empty() ||
-        class_map_vec.empty() ||
-        (members_vec.size() != class_map_vec.size()))
+    if (members_vec.empty() || class_map_vec.empty())
     {
-        SWSS_LOG_INFO("CBF NHG data is empty or miss-matched in size.");
+        SWSS_LOG_ERROR("CBF next hop group data is empty.");
         return make_tuple(false,
-                               set<string>(),
+                               vector<string>(),
                                unordered_map<uint8_t, uint8_t>());
     }
 
     /*
      * Verify that the members are unique.
      */
-    set<string> members_set(members_vec.begin(),
-                                                members_vec.end());
+    set<string> members_set(members_vec.begin(), members_vec.end());
+
     if (members_set.size() != members_vec.size())
     {
-        SWSS_LOG_INFO("CBF NHG members are not unique.");
+        SWSS_LOG_ERROR("CBF next hop group members are not unique.");
         return make_tuple(false,
-                               set<string>(),
+                               vector<string>(),
                                unordered_map<uint8_t, uint8_t>());
     }
 
@@ -235,9 +233,9 @@ tuple<bool, set<string>, unordered_map<uint8_t, uint8_t>>
 
         if (tokens.size() != 2)
         {
-            SWSS_LOG_INFO("CBF NHG class map is ill-formed");
+            SWSS_LOG_ERROR("CBF next hop group class map is ill-formed");
             return make_tuple(false,
-                                   set<string>(),
+                                   vector<string>(),
                                    unordered_map<uint8_t, uint8_t>());
         }
 
@@ -250,9 +248,10 @@ tuple<bool, set<string>, unordered_map<uint8_t, uint8_t>>
 
             if ((fc < 0) || (fc > FC_MAX_VAL))
             {
-                SWSS_LOG_INFO("CBF NHG class map contains invalid FC %d", fc);
+                SWSS_LOG_ERROR("CBF next hop group class map contains invalid "
+                                "FC %d", fc);
                 return make_tuple(false,
-                                       set<string>(),
+                                       vector<string>(),
                                        unordered_map<uint8_t, uint8_t>());
             }
 
@@ -263,10 +262,10 @@ tuple<bool, set<string>, unordered_map<uint8_t, uint8_t>>
 
             if ((index < 0) || (index >= (int)members_vec.size()))
             {
-                SWSS_LOG_INFO("CBF NHG class map contains invalid index %d",
-                              index);
+                SWSS_LOG_ERROR("CBF next hop group class map contains invalid "
+                                "index %d", index);
                 return make_tuple(false,
-                                       set<string>(),
+                                       vector<string>(),
                                        unordered_map<uint8_t, uint8_t>());
             }
 
@@ -277,37 +276,39 @@ tuple<bool, set<string>, unordered_map<uint8_t, uint8_t>>
                                         static_cast<uint8_t>(index)).second;
             if (!rc)
             {
-                SWSS_LOG_INFO("CBF NHG class map maps FC %d more than once",
-                              fc);
+                SWSS_LOG_ERROR("CBF next hop group class map maps FC %d more "
+                                "than once", fc);
                 return make_tuple(false,
-                                       set<string>(),
+                                       vector<string>(),
                                        unordered_map<uint8_t, uint8_t>());
             }
         }
         catch(const exception& e)
         {
-            SWSS_LOG_INFO("Failed to convert CBF NHG FC or index to uint8_t.");
+            SWSS_LOG_ERROR("Failed to convert CBF next hop group FC or index "
+                            "to uint8_t.");
             return make_tuple(false,
-                                   set<string>(),
+                                   vector<string>(),
                                    unordered_map<uint8_t, uint8_t>());
         }
     }
 
-    return make_tuple(true, members_set, class_map_map);
+    return make_tuple(true, members_vec, class_map_map);
 }
 
 CbfNextHopGroup::CbfNextHopGroup(
                        const string &index,
-                       const set<string> &members,
+                       const vector<string> &members,
                        const unordered_map<uint8_t, uint8_t> &class_map) :
     NhgCommon(index),
     m_class_map(class_map)
 {
     SWSS_LOG_ENTER();
 
+    uint8_t idx = 0;
     for (const auto &member : members)
     {
-        m_members.emplace(member, CbfNhgMember(member));
+        m_members.emplace(member, CbfNhgMember(member, idx++));
     }
 }
 
@@ -463,8 +464,8 @@ bool CbfNextHopGroup::desync()
  * Returns: true, if the update was successful,
  *          false, otherwise.
  */
-bool CbfNextHopGroup::update(const set<string> &members,
-                        const unordered_map<uint8_t, uint8_t> &class_map)
+bool CbfNextHopGroup::update(const vector<string> &members,
+                            const unordered_map<uint8_t, uint8_t> &class_map)
 {
     SWSS_LOG_ENTER();
 
@@ -474,6 +475,7 @@ bool CbfNextHopGroup::update(const set<string> &members,
      * Update the group members.
      */
     set<string> removed_members;
+    set<string> members_set(members.begin(), members.end());
 
     /*
      * Store the members that need to be removed.
@@ -484,8 +486,8 @@ bool CbfNextHopGroup::update(const set<string> &members,
          * If the current member doesn't exist in the new set of members, it
          * was removed.
          */
-        const auto &it = members.find(member.first);
-        if (it == members.end())
+        const auto &it = members_set.find(member.first);
+        if (it == members_set.end())
         {
             SWSS_LOG_INFO("CBF next hop group member %s was removed",
                             member.first.c_str());
@@ -514,20 +516,35 @@ bool CbfNextHopGroup::update(const set<string> &members,
     }
 
     /*
-     * Add anny new members to the group.
+     * Iterate over the new set of members.  For those members that already
+     * exist, update their index as it might have changed.  Add the new members
+     * to the set.
      */
-    for (const auto &new_member : members)
+    uint8_t index = 0;
+    for (const auto &member : members)
     {
-        SWSS_LOG_INFO("Adding next hop group member %s to the group",
-                        new_member.c_str());
-        m_members.emplace(new_member, CbfNhgMember(new_member));
+        SWSS_LOG_DEBUG("Checking if CBF NHG member %s currently exists",
+                        member.c_str());
+
+        const auto &mbr_it = m_members.find(member);
+
+        if (mbr_it != m_members.end())
+        {
+            mbr_it->second.setIndex(index);
+        }
+        else
+        {
+            SWSS_LOG_INFO("Adding new CBF NHG member %s", member.c_str());
+            m_members.emplace(member, CbfNhgMember(member, index));
+        }
+
+        ++index;
     }
 
     /*
-     * Sync all the members of the group.  We sync all of them as index changes
-     * might occur and we need to update those members.
+     * Sync the members of the group.
      */
-    if (!syncMembers(members))
+    if (!syncMembers(members_set))
     {
         SWSS_LOG_ERROR("Failed to sync members of CBF next hop group %s",
                         m_key.c_str());
@@ -587,11 +604,10 @@ bool CbfNextHopGroup::syncMembers(const set<string> &members)
     ObjectBulker<sai_next_hop_group_api_t> bulker(sai_next_hop_group_api,
                                                     gSwitchId);
     unordered_map<string, sai_object_id_t> nhgm_ids;
-    uint8_t idx = 0;
 
     for (const auto &key : members)
     {
-        SWSS_LOG_INFO("Checking next hop group %s", key.c_str());
+        SWSS_LOG_INFO("Checking next hop group member %s", key.c_str());
 
         auto &nhgm = m_members.at(key);
 
@@ -601,16 +617,7 @@ bool CbfNextHopGroup::syncMembers(const set<string> &members)
          */
         if (nhgm.isSynced())
         {
-            SWSS_LOG_INFO("Updating CBF next hop group %s index attribute",
-                            nhgm.to_string().c_str());
-
-            if (!nhgm.setIndex(idx++))
-            {
-                SWSS_LOG_ERROR("Failed to update next hop group member %s of "
-                                " CBF next hop group %s index value",
-                                nhgm.to_string().c_str(), m_key.c_str());
-                return false;
-            }
+            SWSS_LOG_INFO("CBF NHG member is already synced");
             continue;
         }
 
@@ -641,16 +648,6 @@ bool CbfNextHopGroup::syncMembers(const set<string> &members)
          * Create the SAI attributes for syncing the NHG as a member.
          */
         auto attrs = createNhgmAttrs(nhgm);
-
-        sai_attribute_t attr;
-        attr.id = SAI_NEXT_HOP_GROUP_MEMBER_ATTR_INDEX;
-        attr.value.oid = idx;
-        attrs.push_back(attr);
-
-        /*
-         * Set the member's index.
-         */
-        nhgm.setIndex(idx++);
 
         bulker.create_entry(&nhgm_ids[key],
                             (uint32_t)attrs.size(),
@@ -799,6 +796,13 @@ vector<sai_attribute_t>
      */
     attr.id = SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID;
     attr.value.oid = nhgm.getNhgId();
+    attrs.push_back(attr);
+
+    /*
+     * Fill in the index.
+     */
+    attr.id = SAI_NEXT_HOP_GROUP_MEMBER_ATTR_INDEX;
+    attr.value.oid = nhgm.getIndex();
     attrs.push_back(attr);
 
     return attrs;
