@@ -130,10 +130,10 @@ void CbfNhgOrch::doTask(Consumer& consumer)
              * DEL operation to perform the update instead.  Otherwise, in the
              * scenario where the DEL operation may be blocked by the ref
              * counter, we'd end up deleting the object after the SET operation
-             * is performed, which would not reflect the desiredd state of the
+             * is performed, which would not reflect the desired state of the
              * object.
              */
-            if (consumer.m_toSync.count(index) > 1)
+            if (consumer.m_toSync.count(it->first) > 1)
             {
                 SWSS_LOG_INFO("There is a pending SET operation - skipping "
                                 "delete operation");

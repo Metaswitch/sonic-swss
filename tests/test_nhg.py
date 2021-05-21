@@ -487,9 +487,24 @@ class TestNextHopGroup(object):
         # Assert the next hop group ID changed
         assert asic_db.get_entry(self.ASIC_RT_STR, rt_key)['SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID'] != nhgid
 
+        # Delete group1 while being referenced
+        nhg_ps._del('group1')
+        time.sleep(1)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
+
+        # Update group1
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.3,10.0.0.5'),
+                                          ('ifname', 'Ethernet4,Ethernet8')])
+        nhg_ps.set("group1", fvs)
+        time.sleep(1)
+
         # Remove the route
         rt_ps._del('2.2.2.0/24')
         asic_db.wait_for_n_keys(self.ASIC_RT_STR, asic_rts_count)
+
+        # The group1 update should have overwritten the delete
+        time.sleep(1)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
 
         # Remove the groups
         nhg_ps._del('group1')

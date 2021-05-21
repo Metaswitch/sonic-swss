@@ -241,8 +241,22 @@ void NonCbfNhgOrch::doTask(Consumer& consumer)
         {
             SWSS_LOG_INFO("Deleting next hop group %s", index.c_str());
 
+            /*
+             * If there is a pending SET after this DEL operation, skip the
+             * DEL operation to perform the update instead.  Otherwise, in the
+             * scenario where the DEL operation may be blocked by the ref
+             * counter, we'd end up deleting the object after the SET operation
+             * is performed, which would not reflect the desired state of the
+             * object.
+             */
+            if (consumer.m_toSync.count(it->first) > 1)
+            {
+                SWSS_LOG_INFO("There is a pending SET operation - skipping "
+                                "delete operation");
+                success = true;
+            }
             /* If the group does not exist, do nothing. */
-            if (nhg_it == m_syncedNhgs.end())
+            else if (nhg_it == m_syncedNhgs.end())
             {
                 SWSS_LOG_WARN("Unable to find group with key %s to remove",
                                 index.c_str());
