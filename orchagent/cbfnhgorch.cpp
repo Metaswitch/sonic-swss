@@ -126,9 +126,23 @@ void CbfNhgOrch::doTask(Consumer& consumer)
             SWSS_LOG_INFO("Deleting CBF next hop group %s", index.c_str());
 
             /*
+             * If there is a pending SET after this DEL operation, skip the
+             * DEL operation to perform the update instead.  Otherwise, in the
+             * scenario where the DEL operation may be blocked by the ref
+             * counter, we'd end up deleting the object after the SET operation
+             * is performed, which would not reflect the desiredd state of the
+             * object.
+             */
+            if (consumer.m_toSync.count(index) > 1)
+            {
+                SWSS_LOG_INFO("There is a pending SET operation - skipping "
+                                "delete operation");
+                success = true;
+            }
+            /*
              * If the group doesn't exist, do nothing.
              */
-            if (cbf_nhg_it == m_syncedNhgs.end())
+            else if (cbf_nhg_it == m_syncedNhgs.end())
             {
                 SWSS_LOG_WARN("Deleting inexistent CBF NHG %s", index.c_str());
                 /*
@@ -472,79 +486,46 @@ bool CbfNextHopGroup::update(const vector<string> &members,
     SWSS_LOG_INFO("Updating CBF next hop group %s", m_key.c_str());
 
     /*
-     * Update the group members.
+     * Because the INDEX attribute is CREATE_ONLY, we have to desync all the
+     * existing members and sync the new ones back as the order of the members
+     * can change due to some of them being removed, which would invalidate
+     * all the other members following them, or inserting a new one somewhere
+     * in the front of the existing members which would invalidate them again.
      */
-    set<string> removed_members;
-    set<string> members_set(members.begin(), members.end());
+    set<string> members_set;
 
-    /*
-     * Store the members that need to be removed.
-     */
     for (const auto &member : m_members)
     {
-        /*
-         * If the current member doesn't exist in the new set of members, it
-         * was removed.
-         */
-        const auto &it = members_set.find(member.first);
-        if (it == members_set.end())
-        {
-            SWSS_LOG_INFO("CBF next hop group member %s was removed",
-                            member.first.c_str());
-            removed_members.insert(member.first);
-        }
+        SWSS_LOG_DEBUG("Adding CBF NHG member %s to be desynced",
+                        member.first.c_str());
+        members_set.insert(member.first);
     }
 
     /*
-     * Desync the removed members.
+     * Remove the existing members.
      */
-    if (!desyncMembers(removed_members))
+    if (!desyncMembers(members_set))
     {
         SWSS_LOG_ERROR("Failed to desync members of CBF next hop group %s",
                         m_key.c_str());
         return false;
     }
+    m_members.clear();
 
     /*
-     * Erase the desynced members.
-     */
-    for (const auto &removed_member : removed_members)
-    {
-        SWSS_LOG_DEBUG("Erasing removed next hop group member %s",
-                        removed_member.c_str());
-        m_members.erase(removed_member);
-    }
-
-    /*
-     * Iterate over the new set of members.  For those members that already
-     * exist, update their index as it might have changed.  Add the new members
-     * to the set.
+     * Add the new members.
      */
     uint8_t index = 0;
     for (const auto &member : members)
     {
-        SWSS_LOG_DEBUG("Checking if CBF NHG member %s currently exists",
-                        member.c_str());
-
-        const auto &mbr_it = m_members.find(member);
-
-        if (mbr_it != m_members.end())
-        {
-            mbr_it->second.setIndex(index);
-        }
-        else
-        {
-            SWSS_LOG_INFO("Adding new CBF NHG member %s", member.c_str());
-            m_members.emplace(member, CbfNhgMember(member, index));
-        }
-
-        ++index;
+        SWSS_LOG_INFO("Adding CBF next hop group member %s", member.c_str());
+        m_members.emplace(member, CbfNhgMember(member, index++));
     }
 
     /*
-     * Sync the members of the group.
+     * Sync the new members.
      */
-    if (!syncMembers(members_set))
+    if (!syncMembers({members.begin(), members.end()}))
     {
         SWSS_LOG_ERROR("Failed to sync members of CBF next hop group %s",
                         m_key.c_str());
@@ -887,52 +868,4 @@ sai_object_id_t CbfNhgMember::getNhgId() const
     }
 
     return gNhgOrch->nonCbfNhgOrch.getNhg(m_key).getId();
-}
-
-/*
- * Purpose: Set the index of this member.
- *
- * Params:  IN index - The index to set.
- *
- * Returns: true, if the operation was successful,
- *          false, otherwise.
- */
-bool CbfNhgMember::setIndex(uint8_t index)
-{
-    SWSS_LOG_ENTER();
-
-    SWSS_LOG_INFO("Updating CBF next hop group member %s index from %u to %u",
-                    to_string().c_str(), m_index, index);
-
-    if (m_index == index)
-    {
-        SWSS_LOG_DEBUG("The index is the same - exit");
-        return true;
-    }
-
-    m_index = index;
-
-    /*
-     * If the member is synced, update it's attribute value.
-     */
-    if (isSynced())
-    {
-        SWSS_LOG_INFO("Updating SAI index attribute");
-
-        sai_attribute_t attr;
-        attr.id = SAI_NEXT_HOP_GROUP_MEMBER_ATTR_INDEX;
-        attr.value.oid = m_index;
-
-        auto status = sai_next_hop_group_api->
-                            set_next_hop_group_member_attribute(m_id, &attr);
-
-        if (status != SAI_STATUS_SUCCESS)
-        {
-            SWSS_LOG_ERROR("Failed to update CBF next hop group member %s "
-                            "index", to_string().c_str());
-            return false;
-        }
-    }
-
-    return true;
 }

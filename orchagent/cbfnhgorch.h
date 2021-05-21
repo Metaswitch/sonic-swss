@@ -33,11 +33,6 @@ public:
     uint8_t getIndex() const { return m_index; }
 
     /*
-     * Set the index of this member.
-     */
-    bool setIndex(uint8_t index);
-
-    /*
      * Get a string representation of this member.
      */
     string to_string() const override { return m_key; }
