@@ -106,6 +106,17 @@ void CbfNhgOrch::doTask(Consumer& consumer)
                     if (success)
                     {
                         SWSS_LOG_INFO("CBF NHG successfully synced.");
+
+                        /*
+                         * If the CBF NHG contains temporary NHGs as members,
+                         * we have to keep checking for updates.
+                         */
+                        if (cbf_nhg.hasTemps())
+                        {
+                            SWSS_LOG_INFO("CBF NHG contains temporary NHGs");
+                            success = false;
+                        }
+
                         m_syncedNhgs.emplace(index,
                                     NhgEntry<CbfNextHopGroup>(move(cbf_nhg)));
                     }
@@ -119,6 +130,16 @@ void CbfNhgOrch::doTask(Consumer& consumer)
             {
                 SWSS_LOG_INFO("Updating the CBF next hop group");
                 success = cbf_nhg_it->second.nhg.update(get<1>(t), get<2>(t));
+
+                /*
+                 * If the CBF NHG has temporary NHGs synced, we need to keep
+                 * checking this group in case they are promoted.
+                 */
+                if (cbf_nhg_it->second.nhg.hasTemps())
+                {
+                    SWSS_LOG_INFO("The CBF NHG references temporary NHGs");
+                    success = false;
+                }
             }
         }
         else if (op == DEL_COMMAND)
@@ -197,6 +218,18 @@ void CbfNhgOrch::doTask(Consumer& consumer)
     }
 }
 
+/*
+ * Purpose: Validate the CBF data.
+ *
+ * Params:  IN members - The members string to validate.
+ *          IN class_map - The class map string to validate.
+ *
+ * Returns: Tuple where:
+ *          - the first element is a bool, representing if the data is valid or
+ *            not
+ *          - the second element is a vector of members
+ *          - the third element is an unordered map of the class map
+ */
 tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
     CbfNhgOrch::validateData(const string &members, const string &class_map)
 {
@@ -310,6 +343,28 @@ tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
     return make_tuple(true, members_vec, class_map_map);
 }
 
+/*
+ * Purpose: Get the non CBF NHG with the given index.
+ *
+ * Params:  IN index - The index of the non CBF NHG.
+ *
+ * Returns: Reference to the non CBF NHG.
+ */
+const NextHopGroup& CbfNhgOrch::getNonCbfNhg(const string &index)
+{
+    SWSS_LOG_ENTER();
+    return gNhgOrch->nonCbfNhgOrch.getNhg(index);
+}
+
+/*
+ * Purpose: Constructor.
+ *
+ * Params:  IN index - The index of the CBF NHG.
+ *          IN members - The members of the CBF NHG.
+ *          IN class_map - The class map of the CBF NHG.
+ *
+ * Returns: Nothing.
+ */
 CbfNextHopGroup::CbfNextHopGroup(
                        const string &index,
                        const vector<string> &members,
@@ -326,13 +381,29 @@ CbfNextHopGroup::CbfNextHopGroup(
     }
 }
 
+/*
+ * Purpose: Move constructor.
+ *
+ * Params:  IN cbf_nhg - The temporary object to construct from.
+ *
+ * Returns: Nothing.
+ */
 CbfNextHopGroup::CbfNextHopGroup(CbfNextHopGroup &&cbf_nhg) :
     NhgCommon(move(cbf_nhg)),
-    m_class_map(move(cbf_nhg.m_class_map))
+    m_class_map(move(cbf_nhg.m_class_map)),
+    m_temp_nhgs(move(cbf_nhg.m_temp_nhgs))
 {
     SWSS_LOG_ENTER();
 }
 
+/*
+ * Purpose: Sync the CBF NHG over SAI, getting a SAI ID.
+ *
+ * Params:  None.
+ *
+ * Returns: true, if the operation was successful,
+ *          false, otherwise.
+ */
 bool CbfNextHopGroup::sync()
 {
     SWSS_LOG_ENTER();
@@ -470,6 +541,58 @@ bool CbfNextHopGroup::desync()
 }
 
 /*
+ * Purpose: Check if the CBF NHG has the same members and in the same order as
+ *          the ones given.
+ *
+ * Params:  IN members - The members to compare with.
+ *
+ * Returns: true, if the current members are the same with the given one,
+ *          false, otherwise.
+ */
+bool CbfNextHopGroup::hasSameMembers(const vector<string> &members) const
+{
+    SWSS_LOG_ENTER();
+
+    /*
+     * The size should be the same.
+     */
+    if (m_members.size() != members.size())
+    {
+        SWSS_LOG_INFO("The size of the current members are different than the "
+                        "size of the given members.");
+        return false;
+    }
+
+    /*
+     * Check that the members are the same and the index is preserved.
+     */
+    uint8_t index = 0;
+
+    for (const auto &member : members)
+    {
+        SWSS_LOG_DEBUG("Checking member %s", member.c_str());
+
+        auto mbr_it = m_members.find(member);
+
+        if (mbr_it == m_members.end())
+        {
+            SWSS_LOG_INFO("Member %s does not exist in the current members",
+                            member.c_str());
+            return false;
+        }
+
+        if (mbr_it->second.getIndex() != index++)
+        {
+            SWSS_LOG_INFO("Member %s has a different index value than the "
+                            "existing member", member.c_str());
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/*
  * Purpose: Update a CBF next hop group.
  *
  * Params:  IN members - The new members.
@@ -486,68 +609,144 @@ bool CbfNextHopGroup::update(const vector<string> &members,
     SWSS_LOG_INFO("Updating CBF next hop group %s", m_key.c_str());
 
     /*
-     * Because the INDEX attribute is CREATE_ONLY, we have to desync all the
-     * existing members and sync the new ones back as the order of the members
-     * can change due to some of them being removed, which would invalidate
-     * all the other members following them, or inserting a new one somewhere
-     * in the front of the existing members which would invalidate them again.
+     * Check if we're just checking if the temporary NHG members were updated.
+     * This would happen only if the given members are the same with the
+     * existing ones and in the same order.  In this scenario, we'll update
+     * just the NEXT_HOP attribute of the temporary members if necessary.
      */
-    set<string> members_set;
-
-    for (const auto &member : m_members)
+    if (!m_temp_nhgs.empty() && hasSameMembers(members))
     {
-        SWSS_LOG_DEBUG("Adding CBF NHG member %s to be desynced",
-                        member.first.c_str());
-        members_set.insert(member.first);
+        SWSS_LOG_INFO("Check if any temporary NHGs has been promoted");
+
+        /*
+         * Iterate over the temporary NHGs and check if they were updated.
+         */
+        for (auto member = m_temp_nhgs.begin(); member != m_temp_nhgs.end();)
+        {
+            SWSS_LOG_DEBUG("Checking temporary CBF NHG member %s",
+                            member->first.c_str());
+
+            const auto &nhg = gNhgOrch->getNhg(member->first);
+
+            /*
+             * If the NHG ID has changed since storing the first occurence,
+             * we have to update the CBF NHG member's attribute.
+             */
+            if (nhg.getId() != member->second)
+            {
+                SWSS_LOG_INFO("CBF NHG member %s changed it's SAI ID from %lu"
+                                " to %lu",
+                            member->first.c_str(), member->second, nhg.getId());
+
+                if (!m_members.at(member->first).updateNhAttr())
+                {
+                    SWSS_LOG_ERROR("Failed to update temporary next hop group "
+                                    "member %s of CBF next hop group %s",
+                                    member->first.c_str(), m_key.c_str());
+                    return false;
+                }
+
+                /*
+                 * If the NHG was promoted, remove it from the temporary NHG
+                 * map.
+                 */
+                if (!nhg.isTemp())
+                {
+                    SWSS_LOG_INFO("CBF NHG member %s was promoted",
+                                    member->first.c_str());
+                    member = m_temp_nhgs.erase(member);
+                }
+                /*
+                 * If the NHG was just updated, update its current NHG ID value
+                 * in the map.
+                 */
+                else
+                {
+                    SWSS_LOG_INFO("CBF NHG member %s is still temporary",
+                                    member->first.c_str());
+                    member->second = nhg.getId();
+                    ++member;
+                }
+            }
+        }
     }
-
     /*
-     * Remove the existing members.
+     * If the members are different, update the whole members list.
      */
-    if (!desyncMembers(members_set))
+    else
     {
-        SWSS_LOG_ERROR("Failed to desync members of CBF next hop group %s",
-                        m_key.c_str());
-        return false;
-    }
-    m_members.clear();
+        SWSS_LOG_INFO("Update CBF NHG's members");
 
-    /*
-     * Add the new members.
-     */
-    uint8_t index = 0;
-    for (const auto &member : members)
-    {
-        SWSS_LOG_INFO("Adding CBF next hop group member %s", member.c_str());
-        m_members.emplace(member, CbfNhgMember(member, index++));
-    }
+        /*
+         * Because the INDEX attribute is CREATE_ONLY, we have to desync all
+         * the existing members and sync the new ones back as the order of the
+         * members can change due to some of them being removed, which would
+         * invalidate all the other members following them, or inserting a new
+         * one somewhere in the front of the existing members which would also
+         * invalidate them.
+         */
+        set<string> members_set;
 
-    /*
-     * Sync the new members.
-     */
-    if (!syncMembers({members.begin(), members.end()}))
-    {
-        SWSS_LOG_ERROR("Failed to sync members of CBF next hop group %s",
-                        m_key.c_str());
-        return false;
+        for (const auto &member : m_members)
+        {
+            members_set.insert(member.first);
+        }
+
+        /*
+        * Remove the existing members.
+        */
+        if (!desyncMembers(members_set))
+        {
+            SWSS_LOG_ERROR("Failed to desync members of CBF next hop group %s",
+                            m_key.c_str());
+            return false;
+        }
+        m_members.clear();
+        m_temp_nhgs.clear();
+
+        /*
+        * Add the new members.
+        */
+        uint8_t index = 0;
+        for (const auto &member : members)
+        {
+            SWSS_LOG_INFO("Adding CBF next hop group member %s",
+                            member.c_str());
+            m_members.emplace(member, CbfNhgMember(member, index++));
+        }
+
+        /*
+        * Sync the new members.
+        */
+        if (!syncMembers({members.begin(), members.end()}))
+        {
+            SWSS_LOG_ERROR("Failed to sync members of CBF next hop group %s",
+                            m_key.c_str());
+            return false;
+        }
     }
 
     /*
      * Update the group map.
      */
-    m_class_map = class_map;
-
-    sai_attribute_t nhg_attr = getClassMapAttr();
-
-    auto status = sai_next_hop_group_api->set_next_hop_group_attribute(m_id,
-                                                                    &nhg_attr);
-
-    if (status != SAI_STATUS_SUCCESS)
+    if (m_class_map != class_map)
     {
-        SWSS_LOG_ERROR("Failed to update CBF next hop group %s, rv %d",
-                        m_key.c_str(),
-                        status);
-        return false;
+        SWSS_LOG_INFO("Updating CBF NHG's class map");
+
+        m_class_map = class_map;
+
+        sai_attribute_t nhg_attr = getClassMapAttr();
+
+        auto status = sai_next_hop_group_api->set_next_hop_group_attribute(
+                                                            m_id, &nhg_attr);
+
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR("Failed to update CBF next hop group %s, rv %d",
+                            m_key.c_str(),
+                            status);
+            return false;
+        }
     }
 
     return true;
@@ -612,15 +811,15 @@ bool CbfNextHopGroup::syncMembers(const set<string> &members)
             return false;
         }
 
-        const auto &nhg = gNhgOrch->nonCbfNhgOrch.getNhg(key);
+        const auto &nhg = CbfNhgOrch::getNonCbfNhg(key);
 
         /*
          * Check if the group is synced.
          */
-        if (!nhg.isSynced() || nhg.isTemp())
+        if (!nhg.isSynced())
         {
             SWSS_LOG_ERROR("Next hop group %s in CBF next hop group %s is not"
-                            " synced or it's temporary",
+                            " synced",
                             key.c_str(), m_key.c_str());
             return false;
         }
@@ -661,6 +860,17 @@ bool CbfNextHopGroup::syncMembers(const set<string> &members)
             SWSS_LOG_DEBUG("Successfully synced CBF next hop group member %s",
                             member.first.c_str());
             m_members.at(member.first).sync(member.second);
+
+            const auto &nhg = gNhgOrch->getNhg(member.first);
+            /*
+             * If the member is temporary, store it in order to check if it is
+             * promoted at some point.
+             */
+            if (nhg.isTemp())
+            {
+                SWSS_LOG_INFO("CBF NHG member is temporary");
+                m_temp_nhgs.emplace(member.first, nhg.getId());
+            }
         }
     }
 
@@ -834,6 +1044,44 @@ void CbfNhgMember::sync(sai_object_id_t gm_id)
 }
 
 /*
+ * Purpose: Update the next hop attribute of the member.
+ *
+ * Params:  None.
+ *
+ * Returns: true, if the operation was successful,
+ *          false, otherwise.
+ */
+bool CbfNhgMember::updateNhAttr()
+{
+    SWSS_LOG_ENTER();
+
+    SWSS_LOG_INFO("Updating next hop attribute of CBF NHG member %s",
+                    to_string().c_str());
+
+    if (!isSynced())
+    {
+        SWSS_LOG_ERROR("Trying to update next hop attribute of CBF NHG member "
+                        "%s that is not synced", to_string().c_str());
+        throw logic_error("Trying to update attribute of unsynced object.");
+    }
+
+    /*
+     * Fill in the attribute.
+     */
+    sai_attribute_t attr;
+    attr.id = SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID;
+    attr.value.oid = getNhgId();
+
+    /*
+     * Set the attribute over SAI.
+     */
+    auto status = sai_next_hop_group_api->set_next_hop_group_member_attribute(
+                                                                m_id, &attr);
+
+    return status == SAI_STATUS_SUCCESS;
+}
+
+/*
  * Purpose: Desync the member, reseting its SAI ID and decrementing the NHG ref
  *          counter.
  *
@@ -867,5 +1115,5 @@ sai_object_id_t CbfNhgMember::getNhgId() const
         return SAI_NULL_OBJECT_ID;
     }
 
-    return gNhgOrch->nonCbfNhgOrch.getNhg(m_key).getId();
+    return CbfNhgOrch::getNonCbfNhg(m_key).getId();
 }

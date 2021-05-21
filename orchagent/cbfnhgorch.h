@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nexthopgroup.h"
+#include "noncbfnhgorch.h"
 
 using namespace std;
 
@@ -26,6 +27,11 @@ public:
      * Get the NHG ID of this member.
      */
     sai_object_id_t getNhgId() const;
+
+    /*
+     * Update the NEXT_HOP attribute of this member.
+     */
+    bool updateNhAttr();
 
     /*
      * Get the index of this group member.
@@ -76,6 +82,12 @@ public:
     inline bool isTemp() const override { SWSS_LOG_ENTER(); return false; }
 
     /*
+     * Check if the CBF next hop group contains synced temporary NHGs.
+     */
+    inline bool hasTemps() const
+                            { SWSS_LOG_ENTER(); return !m_temp_nhgs.empty(); }
+
+    /*
      * CBF groups do not have a NextHopGroupkey.
      */
     inline NextHopGroupKey getNhgKey() const override { return {}; }
@@ -90,6 +102,12 @@ public:
 
 private:
     unordered_map<uint8_t, uint8_t> m_class_map;
+
+    /*
+     * Map of synced temporary NHGs contained in this next hop group along with
+     * the NHG ID at the time of sync.
+     */
+    unordered_map<string, sai_object_id_t> m_temp_nhgs;
 
     /*
      * Sync the given members over SAI.
@@ -111,12 +129,23 @@ private:
      * Build the SAI attribute for the class map.
      */
     sai_attribute_t getClassMapAttr() const;
+
+    /*
+     * Check if the CBF NHG has the same members and in the same order as the
+     * ones given.
+     */
+    bool hasSameMembers(const vector<string> &members) const;
 };
 
 class CbfNhgOrch : public NhgOrchCommon<CbfNextHopGroup>
 {
 public:
     void doTask(Consumer &consumer);
+
+    /*
+     * Get the non CBF NHG with the given index.
+     */
+    static inline const NextHopGroup& getNonCbfNhg(const string &index);
 
 private:
     static tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
