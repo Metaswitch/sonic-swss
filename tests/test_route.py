@@ -38,6 +38,12 @@ class TestRouteBase(object):
     def remove_l3_intf(self, interface):
         self.cdb.delete_entry("INTERFACE", interface)
 
+    def create_mpls_intf(self, interface):
+        self.cdb.create_entry("INTERFACE", interface, {"mpls": "enable"})
+
+    def remove_mpls_intf(self, interface):
+        self.cdb.delete_entry("INTERFACE", interface)
+
     def add_ip_address(self, interface, ip):
         self.cdb.create_entry("INTERFACE", interface + "|" + ip, {"NULL": "NULL"})
 
@@ -103,6 +109,32 @@ class TestRouteBase(object):
             route_entries = self.adb.get_keys("ASIC_STATE:SAI_OBJECT_TYPE_ROUTE_ENTRY")
             route_destinations = [json.loads(route_entry)["dest"] for route_entry in route_entries]
             return (all(destination not in route_destinations for destination in destinations), None)
+
+        wait_for_result(_access_function)
+
+    def create_inseg_entry(self, key, pairs):
+        tbl = swsscommon.ProducerStateTable(self.pdb.db_connection, "LABEL_ROUTE_TABLE")
+        fvs = swsscommon.FieldValuePairs(list(pairs.items()))
+        tbl.set(key, fvs)
+
+    def remove_inseg_entry(self, key):
+        tbl = swsscommon.ProducerStateTable(self.pdb.db_connection, "LABEL_ROUTE_TABLE")
+        tbl._del(key)
+
+    def check_inseg_entries(self, labels):
+        def _access_function():
+            inseg_entries = self.adb.get_keys("ASIC_STATE:SAI_OBJECT_TYPE_INSEG_ENTRY")
+            inseg_labels = [json.loads(inseg_entry)["label"]
+                                  for inseg_entry in inseg_entries]
+            return (all(label in inseg_labels for label in labels), None)
+
+        wait_for_result(_access_function)
+
+    def check_deleted_inseg_entries(self, labels):
+        def _access_function():
+            inseg_entries = self.adb.get_keys("ASIC_STATE:SAI_OBJECT_TYPE_INSEG_ENTRY")
+            inseg_labels = [json.loads(inseg_entry)["label"] for inseg_entry in inseg_entries]
+            return (all(label not in inseg_labels for label in labels), None)
 
         wait_for_result(_access_function)
 
@@ -981,6 +1013,465 @@ class TestRoutePerf(TestRouteBase):
 
         dvs.servers[1].runcmd("ip route del default dev eth0")
         dvs.servers[1].runcmd("ip address del 10.0.0.3/31 dev eth0")
+
+class TestMplsRoute(TestRouteBase):
+    """ Functionality tests for route """
+    def setup_mpls(self, dvs):
+        dvs.runcmd("modprobe mpls_router")
+        dvs.runcmd("modprobe mpls_iptunnel")
+        dvs.runcmd("sysctl -w net.mpls.platform_labels=1000")
+
+    def clear_mpls(self, dvs):
+        dvs.runcmd("rmmod mpls_iptunnel")
+        dvs.runcmd("rmmod mpls_router")
+
+    @pytest.mark.skip(reason="Requires fpmsyncd -l net")
+    def test_RouteAddRemoveMplsPushRoute(self, dvs, testlog):
+        self.setup_mpls(dvs)
+
+        self.setup_db(dvs)
+
+        self.clear_srv_config(dvs)
+
+        # create mpls interface
+        self.create_mpls_intf("Ethernet0")
+        self.create_mpls_intf("Ethernet4")
+
+        # set ip address
+        self.add_ip_address("Ethernet0", "10.0.0.0/31")
+        self.add_ip_address("Ethernet4", "10.0.0.2/31")
+
+        # bring up interface
+        self.set_admin_status("Ethernet0", "up")
+        self.set_admin_status("Ethernet4", "up")
+
+        # set ip address and default route
+        dvs.servers[0].runcmd("ip address add 10.0.0.1/31 dev eth0")
+        dvs.servers[0].runcmd("ip route add default via 10.0.0.0")
+
+        dvs.servers[1].runcmd("ip address add 10.0.0.3/31 dev eth0")
+        dvs.servers[1].runcmd("ip route add default via 10.0.0.2")
+
+        # get neighbor and arp entry
+        dvs.servers[0].runcmd("ping -c 1 10.0.0.3")
+
+        # add route entry
+        dvs.runcmd("ip route add 2.2.2.0/24 encap mpls 201 via inet 10.0.0.1 dev Ethernet0")
+
+        # check application database
+        self.pdb.wait_for_entry("ROUTE_TABLE", "2.2.2.0/24")
+
+        # check ASIC route database
+        self.check_route_entries(["2.2.2.0/24"])
+
+        # remove route entry
+        dvs.runcmd("ip route del 2.2.2.0/24 encap mpls 201 via inet 10.0.0.1 dev Ethernet0")
+
+        # check application database
+        self.pdb.wait_for_deleted_entry("ROUTE_TABLE", "2.2.2.0/24")
+
+        # check ASIC route database
+        self.check_deleted_route_entries(["2.2.2.0/24"])
+
+        # remove ip address
+        self.remove_ip_address("Ethernet0", "10.0.0.0/31")
+        self.remove_ip_address("Ethernet4", "10.0.0.2/31")
+
+        # remove mpls interface
+        self.remove_mpls_intf("Ethernet0")
+        self.remove_mpls_intf("Ethernet4")
+
+        self.set_admin_status("Ethernet0", "down")
+        self.set_admin_status("Ethernet4", "down")
+
+        # remove ip address and default route
+        dvs.servers[0].runcmd("ip route del default dev eth0")
+        dvs.servers[0].runcmd("ip address del 10.0.0.1/31 dev eth0")
+
+        dvs.servers[1].runcmd("ip route del default dev eth0")
+        dvs.servers[1].runcmd("ip address del 10.0.0.3/31 dev eth0")
+
+        self.clear_mpls(dvs)
+
+    @pytest.mark.skip(reason="Requires fpmsyncd -l net")
+    def test_RouteAddRemoveMplsSwapRoute(self, dvs, testlog):
+        self.setup_mpls(dvs)
+
+        self.setup_db(dvs)
+
+        self.clear_srv_config(dvs)
+
+        # create mpls interface
+        self.create_mpls_intf("Ethernet0")
+        self.create_mpls_intf("Ethernet4")
+
+        # set ip address
+        self.add_ip_address("Ethernet0", "10.0.0.0/31")
+        self.add_ip_address("Ethernet4", "10.0.0.2/31")
+
+        # bring up interface
+        self.set_admin_status("Ethernet0", "up")
+        self.set_admin_status("Ethernet4", "up")
+
+        # set ip address and default route
+        dvs.servers[0].runcmd("ip address add 10.0.0.1/31 dev eth0")
+        dvs.servers[0].runcmd("ip route add default via 10.0.0.0")
+
+        dvs.servers[1].runcmd("ip address add 10.0.0.3/31 dev eth0")
+        dvs.servers[1].runcmd("ip route add default via 10.0.0.2")
+
+        # get neighbor and arp entry
+        dvs.servers[0].runcmd("ping -c 1 10.0.0.3")
+
+        # add route entry
+        dvs.runcmd("ip -f mpls route add 200 as 201 via inet 10.0.0.1 dev Ethernet0")
+        time.sleep(120)
+
+        # check application database
+        self.pdb.wait_for_entry("LABEL_ROUTE_TABLE", "200")
+
+        # check ASIC inseg database
+        self.check_inseg_entries(["200"])
+
+        # remove route entry
+        dvs.runcmd("ip -f mpls route del 200 as 201 via inet 10.0.0.1 dev Ethernet0")
+
+        # check application database
+        self.pdb.wait_for_deleted_entry("LABEL_ROUTE_TABLE", "200")
+
+        # check ASIC inseg database
+        self.check_deleted_inseg_entries(["200"])
+
+        # remove ip address
+        self.remove_ip_address("Ethernet0", "10.0.0.0/31")
+        self.remove_ip_address("Ethernet4", "10.0.0.2/31")
+
+        # remove mpls interface
+        self.remove_mpls_intf("Ethernet0")
+        self.remove_mpls_intf("Ethernet4")
+
+        self.set_admin_status("Ethernet0", "down")
+        self.set_admin_status("Ethernet4", "down")
+
+        # remove ip address and default route
+        dvs.servers[0].runcmd("ip route del default dev eth0")
+        dvs.servers[0].runcmd("ip address del 10.0.0.1/31 dev eth0")
+
+        dvs.servers[1].runcmd("ip route del default dev eth0")
+        dvs.servers[1].runcmd("ip address del 10.0.0.3/31 dev eth0")
+
+        self.clear_mpls(dvs)
+
+    @pytest.mark.skip(reason="Requires fpmsyncd -l net")
+    def test_RouteAddRemoveMplsPopRoute(self, dvs, testlog):
+        self.setup_mpls(dvs)
+
+        self.setup_db(dvs)
+
+        self.clear_srv_config(dvs)
+
+        # create mpls interface
+        self.create_mpls_intf("Ethernet0")
+        self.create_mpls_intf("Ethernet4")
+
+        # set ip address
+        self.add_ip_address("Ethernet0", "10.0.0.0/31")
+        self.add_ip_address("Ethernet4", "10.0.0.2/31")
+
+        # bring up interface
+        self.set_admin_status("Ethernet0", "up")
+        self.set_admin_status("Ethernet4", "up")
+
+        # set ip address and default route
+        dvs.servers[0].runcmd("ip address add 10.0.0.1/31 dev eth0")
+        dvs.servers[0].runcmd("ip route add default via 10.0.0.0")
+
+        dvs.servers[1].runcmd("ip address add 10.0.0.3/31 dev eth0")
+        dvs.servers[1].runcmd("ip route add default via 10.0.0.2")
+
+        # get neighbor and arp entry
+        dvs.servers[0].runcmd("ping -c 1 10.0.0.3")
+
+        # add route entry
+        dvs.runcmd("ip -f mpls route add 200 via inet 10.0.0.1 dev Ethernet0")
+
+        # check application database
+        self.pdb.wait_for_entry("LABEL_ROUTE_TABLE", "200")
+
+        # check ASIC inseg database
+        self.check_inseg_entries(["200"])
+
+        # remove route entry
+        dvs.runcmd("ip -f mpls route del 200 via inet 10.0.0.1 dev Ethernet0")
+
+        # check application database
+        self.pdb.wait_for_deleted_entry("LABEL_ROUTE_TABLE", "200")
+
+        # check ASIC inseg database
+        self.check_deleted_inseg_entries(["200"])
+
+        # remove ip address
+        self.remove_ip_address("Ethernet0", "10.0.0.0/31")
+        self.remove_ip_address("Ethernet4", "10.0.0.2/31")
+
+        # remove mpls interface
+        self.remove_mpls_intf("Ethernet0")
+        self.remove_mpls_intf("Ethernet4")
+
+        self.set_admin_status("Ethernet0", "down")
+        self.set_admin_status("Ethernet4", "down")
+
+        # remove ip address and default route
+        dvs.servers[0].runcmd("ip route del default dev eth0")
+        dvs.servers[0].runcmd("ip address del 10.0.0.1/31 dev eth0")
+
+        dvs.servers[1].runcmd("ip route del default dev eth0")
+        dvs.servers[1].runcmd("ip address del 10.0.0.3/31 dev eth0")
+
+        self.clear_mpls(dvs)
+
+    @pytest.mark.skip(reason="Requires fpmsyncd -l net")
+    def test_RouteAddRemoveMplsPushRouteNHG(self, dvs, testlog):
+        self.setup_mpls(dvs)
+
+        self.setup_db(dvs)
+
+        self.clear_srv_config(dvs)
+
+        # create mpls interface
+        self.create_mpls_intf("Ethernet0")
+        self.create_mpls_intf("Ethernet4")
+        self.create_mpls_intf("Ethernet8")
+
+        # set ip address
+        self.add_ip_address("Ethernet0", "10.0.0.0/31")
+        self.add_ip_address("Ethernet4", "10.0.0.2/31")
+        self.add_ip_address("Ethernet8", "10.0.0.4/31")
+
+        # bring up interface
+        self.set_admin_status("Ethernet0", "up")
+        self.set_admin_status("Ethernet4", "up")
+        self.set_admin_status("Ethernet8", "up")
+
+        # set ip address and default route
+        dvs.servers[0].runcmd("ip address add 10.0.0.1/31 dev eth0")
+        dvs.servers[0].runcmd("ip route add default via 10.0.0.0")
+
+        dvs.servers[1].runcmd("ip address add 10.0.0.3/31 dev eth0")
+        dvs.servers[1].runcmd("ip route add default via 10.0.0.2")
+
+        dvs.servers[2].runcmd("ip address add 10.0.0.5/31 dev eth0")
+        dvs.servers[2].runcmd("ip route add default via 10.0.0.4")
+
+        # get neighbor and arp entry
+        dvs.servers[0].runcmd("ping -c 1 10.0.0.3")
+        dvs.servers[2].runcmd("ping -c 1 10.0.0.3")
+
+        # add route entry
+        dvs.runcmd("ip route add 2.2.2.0/24 nexthop encap mpls 200 via inet 10.0.0.1 dev Ethernet0 nexthop encap mpls 201 via inet 10.0.0.5 dev Ethernet8")
+
+        # check application database
+        self.pdb.wait_for_entry("ROUTE_TABLE", "2.2.2.0/24")
+
+        # check ASIC route database
+        self.check_route_entries(["2.2.2.0/24"])
+
+        # remove route entry
+        dvs.runcmd("ip route del 2.2.2.0/24 nexthop encap mpls 201 via inet 10.0.0.1 dev Ethernet0 nexthop encap mpls 202 via inet 10.0.0.5 dev Ethernet8")
+
+        # check application database
+        self.pdb.wait_for_deleted_entry("ROUTE_TABLE", "2.2.2.0/24")
+
+        # check ASIC route database
+        self.check_deleted_route_entries(["2.2.2.0/24"])
+
+        # remove ip address
+        self.remove_ip_address("Ethernet0", "10.0.0.0/31")
+        self.remove_ip_address("Ethernet4", "10.0.0.2/31")
+        self.remove_ip_address("Ethernet8", "10.0.0.4/31")
+
+        # remove mpls interface
+        self.remove_mpls_intf("Ethernet0")
+        self.remove_mpls_intf("Ethernet4")
+        self.remove_mpls_intf("Ethernet8")
+
+        self.set_admin_status("Ethernet0", "down")
+        self.set_admin_status("Ethernet4", "down")
+        self.set_admin_status("Ethernet8", "down")
+
+        # remove ip address and default route
+        dvs.servers[0].runcmd("ip route del default dev eth0")
+        dvs.servers[0].runcmd("ip address del 10.0.0.1/31 dev eth0")
+
+        dvs.servers[1].runcmd("ip route del default dev eth0")
+        dvs.servers[1].runcmd("ip address del 10.0.0.3/31 dev eth0")
+
+        dvs.servers[2].runcmd("ip route del default dev eth0")
+        dvs.servers[2].runcmd("ip address del 10.0.0.5/31 dev eth0")
+
+        self.clear_mpls(dvs)
+
+    @pytest.mark.skip(reason="Requires fpmsyncd -l net")
+    def test_RouteAddRemoveMplsSwapRouteNHG(self, dvs, testlog):
+        self.setup_mpls(dvs)
+
+        self.setup_db(dvs)
+
+        self.clear_srv_config(dvs)
+
+        # create mpls interface
+        self.create_mpls_intf("Ethernet0")
+        self.create_mpls_intf("Ethernet4")
+        self.create_mpls_intf("Ethernet8")
+
+        # set ip address
+        self.add_ip_address("Ethernet0", "10.0.0.0/31")
+        self.add_ip_address("Ethernet4", "10.0.0.2/31")
+        self.add_ip_address("Ethernet4", "10.0.0.4/31")
+
+        # bring up interface
+        self.set_admin_status("Ethernet0", "up")
+        self.set_admin_status("Ethernet4", "up")
+        self.set_admin_status("Ethernet8", "up")
+
+        # set ip address and default route
+        dvs.servers[0].runcmd("ip address add 10.0.0.1/31 dev eth0")
+        dvs.servers[0].runcmd("ip route add default via 10.0.0.0")
+
+        dvs.servers[1].runcmd("ip address add 10.0.0.3/31 dev eth0")
+        dvs.servers[1].runcmd("ip route add default via 10.0.0.2")
+
+        dvs.servers[2].runcmd("ip address add 10.0.0.5/31 dev eth0")
+        dvs.servers[2].runcmd("ip route add default via 10.0.0.4")
+
+        # get neighbor and arp entry
+        dvs.servers[0].runcmd("ping -c 1 10.0.0.3")
+        dvs.servers[2].runcmd("ping -c 1 10.0.0.3")
+
+        # add route entry
+        dvs.runcmd("ip -f mpls route add 200 nexthop as 201 via inet 10.0.0.1 dev Ethernet0 nexthop as 202 via inet 10.0.0.5 dev Ethernet8")
+
+        # check application database
+        self.pdb.wait_for_entry("LABEL_ROUTE_TABLE", "200")
+
+        # check ASIC inseg database
+        self.check_inseg_entries(["200"])
+
+        # remove route entry
+        dvs.runcmd("ip -f mpls route del 200 nexthop as 201 via inet 10.0.0.1 dev Ethernet0 nexthop as 202 via inet 10.0.0.5 dev Ethernet8")
+
+        # check application database
+        self.pdb.wait_for_deleted_entry("LABEL_ROUTE_TABLE", "200")
+
+        # check ASIC inseg database
+        self.check_deleted_inseg_entries(["200"])
+
+        # remove ip address
+        self.remove_ip_address("Ethernet0", "10.0.0.0/31")
+        self.remove_ip_address("Ethernet4", "10.0.0.2/31")
+        self.remove_ip_address("Ethernet8", "10.0.0.4/31")
+
+        # remove mpls interface
+        self.remove_mpls_intf("Ethernet0")
+        self.remove_mpls_intf("Ethernet4")
+        self.remove_mpls_intf("Ethernet8")
+
+        self.set_admin_status("Ethernet0", "down")
+        self.set_admin_status("Ethernet4", "down")
+        self.set_admin_status("Ethernet8", "down")
+
+        # remove ip address and default route
+        dvs.servers[0].runcmd("ip route del default dev eth0")
+        dvs.servers[0].runcmd("ip address del 10.0.0.1/31 dev eth0")
+
+        dvs.servers[1].runcmd("ip route del default dev eth0")
+        dvs.servers[1].runcmd("ip address del 10.0.0.3/31 dev eth0")
+
+        dvs.servers[2].runcmd("ip route del default dev eth0")
+        dvs.servers[2].runcmd("ip address del 10.0.0.5/31 dev eth0")
+
+        self.clear_mpls(dvs)
+
+    @pytest.mark.skip(reason="Requires fpmsyncd -l net")
+    def test_RouteAddRemoveMplsPopRouteNHG(self, dvs, testlog):
+        self.setup_mpls(dvs)
+
+        self.setup_db(dvs)
+
+        self.clear_srv_config(dvs)
+
+        # create mpls interface
+        self.create_mpls_intf("Ethernet0")
+        self.create_mpls_intf("Ethernet4")
+        self.create_mpls_intf("Ethernet8")
+
+        # set ip address
+        self.add_ip_address("Ethernet0", "10.0.0.0/31")
+        self.add_ip_address("Ethernet4", "10.0.0.2/31")
+        self.add_ip_address("Ethernet4", "10.0.0.4/31")
+
+        # bring up interface
+        self.set_admin_status("Ethernet0", "up")
+        self.set_admin_status("Ethernet4", "up")
+        self.set_admin_status("Ethernet8", "up")
+
+        # set ip address and default route
+        dvs.servers[0].runcmd("ip address add 10.0.0.1/31 dev eth0")
+        dvs.servers[0].runcmd("ip route add default via 10.0.0.0")
+
+        dvs.servers[1].runcmd("ip address add 10.0.0.3/31 dev eth0")
+        dvs.servers[1].runcmd("ip route add default via 10.0.0.2")
+
+        dvs.servers[2].runcmd("ip address add 10.0.0.5/31 dev eth0")
+        dvs.servers[2].runcmd("ip route add default via 10.0.0.4")
+
+        # get neighbor and arp entry
+        dvs.servers[0].runcmd("ping -c 1 10.0.0.3")
+        dvs.servers[2].runcmd("ping -c 1 10.0.0.3")
+
+        # add route entry
+        dvs.runcmd("ip -f mpls route add 200 nexthop via inet 10.0.0.1 dev Ethernet0 nexthop via inet 10.0.0.5 dev Ethernet8")
+
+        # check application database
+        self.pdb.wait_for_entry("LABEL_ROUTE_TABLE", "200")
+
+        # check ASIC inseg database
+        self.check_inseg_entries(["200"])
+
+        # remove route entry
+        dvs.runcmd("ip -f mpls route del 200 nexthop via inet 10.0.0.1 dev Ethernet0 nexthop via inet 10.0.0.5 dev Ethernet8")
+
+        # check application database
+        self.pdb.wait_for_deleted_entry("LABEL_ROUTE_TABLE", "200")
+
+        # check ASIC inseg database
+        self.check_deleted_inseg_entries(["200"])
+
+        # remove ip address
+        self.remove_ip_address("Ethernet0", "10.0.0.0/31")
+        self.remove_ip_address("Ethernet4", "10.0.0.2/31")
+        self.remove_ip_address("Ethernet8", "10.0.0.4/31")
+
+        # remove mpls interface
+        self.remove_mpls_intf("Ethernet0")
+        self.remove_mpls_intf("Ethernet4")
+        self.remove_mpls_intf("Ethernet8")
+
+        self.set_admin_status("Ethernet0", "down")
+        self.set_admin_status("Ethernet4", "down")
+        self.set_admin_status("Ethernet8", "down")
+
+        # remove ip address and default route
+        dvs.servers[0].runcmd("ip route del default dev eth0")
+        dvs.servers[0].runcmd("ip address del 10.0.0.1/31 dev eth0")
+
+        dvs.servers[1].runcmd("ip route del default dev eth0")
+        dvs.servers[1].runcmd("ip address del 10.0.0.3/31 dev eth0")
+
+        dvs.servers[2].runcmd("ip route del default dev eth0")
+        dvs.servers[2].runcmd("ip address del 10.0.0.5/31 dev eth0")
+
+        self.clear_mpls(dvs)
 
 # Add Dummy always-pass test at end as workaroud
 # for issue when Flaky fail on final test it invokes module tear-down before retrying

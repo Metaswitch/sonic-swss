@@ -133,6 +133,7 @@ public:
     uint32_t  m_fdb_count = 0;
     uint32_t  m_up_member_count = 0;
     uint32_t  m_maximum_headroom = 0;
+    bool      m_mpls = false;
 
     /*
      * Following two bit vectors are used to lock
