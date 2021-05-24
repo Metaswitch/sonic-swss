@@ -556,7 +556,7 @@ void RouteOrch::doPrefixTask(Consumer& consumer)
                  * based on the IPs and aliases.  Otherwise, get the key from
                  * the NhgOrch.
                  */
-                vector<string>& ipv = ctx.ipv;
+                vector<string> ipv;
                 vector<string> alsv;
                 vector<string> mpls_nhv;
                 vector<string> vni_labelv;
@@ -565,7 +565,6 @@ void RouteOrch::doPrefixTask(Consumer& consumer)
                 /* Check if the next hop group is owned by the NhgOrch. */
                 if (nhg_index.empty())
                 {
-                    vector<string>& ipv = ctx.ipv;
                     ipv = tokenize(ips, ',');
                     alsv = tokenize(aliases, ',');
                     mpls_nhv = tokenize(mpls_nhs, ',');
@@ -681,6 +680,8 @@ void RouteOrch::doPrefixTask(Consumer& consumer)
                         continue;
                     }
                 }
+
+                NextHopGroupKey& nhg = ctx.nhg;
 
                 if (nhg.getSize() == 1 && nhg.hasIntfNextHop())
                 {
@@ -1562,9 +1563,9 @@ bool RouteOrch::addRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextHops)
 
                     /* If the current next hop is part of the next hop group to sync,
                      * then return false and no need to add another temporary route. */
-                    if (it_route != m_syncdRoutes.at(vrf_id).end() && it_route->second.getSize() == 1)
+                    if (it_route != m_syncdRoutes.at(vrf_id).end() && it_route->second.nhg_key.getSize() == 1)
                     {
-                        const NextHopKey& nexthop = *it_route->second.getNextHops().begin();
+                        const NextHopKey& nexthop = *it_route->second.nhg_key.getNextHops().begin();
                         if (nextHops.contains(nexthop))
                         {
                             return false;
@@ -1923,12 +1924,12 @@ bool RouteOrch::addRoutePost(const RouteBulkContext& ctx, const NextHopGroupKey 
             /* Decrease the ref count for the previous next hop group. */
             if (it_route->second.nhg_index.empty())
             {
-                decreaseNextHopRefCount(it_route->second);
-                auto ol_nextHops = it_route->second;
-                if (it_route->second.getSize() > 1
-                    && m_syncdNextHopGroups[it_route->second].ref_count == 0)
+                decreaseNextHopRefCount(it_route->second.nhg_key);
+                auto ol_nextHops = it_route->second.nhg_key;
+                if (ol_nextHops.getSize() > 1
+                    && m_syncdNextHopGroups[ol_nextHops].ref_count == 0)
                 {
-                    m_bulkNhgReducedRefCnt.emplace(it_route->second, 0);
+                    m_bulkNhgReducedRefCnt.emplace(ol_nextHops, 0);
                 }
                 else if (ol_nextHops.is_overlay_nexthop())
                 {
@@ -2134,18 +2135,18 @@ bool RouteOrch::removeRoutePost(const RouteBulkContext& ctx)
             */
             decreaseNextHopRefCount(ol_nextHops);
 
-            if (it_route->second.getSize() > 1
-                && m_syncdNextHopGroups[it_route->second].ref_count == 0)
+            if (ol_nextHops.getSize() > 1
+                && m_syncdNextHopGroups[ol_nextHops].ref_count == 0)
             {
-                m_bulkNhgReducedRefCnt.emplace(it_route->second, 0);
+                m_bulkNhgReducedRefCnt.emplace(ol_nextHops, 0);
             }
             /*
              * Additionally check if the NH has label and its ref count == 0, then
              * remove the label next hop.
              */
-            else if (it_route->second.getSize() == 1)
+            else if (ol_nextHops.getSize() == 1)
             {
-                NextHopKey nexthop(it_route->second.to_string());
+                NextHopKey nexthop(ol_nextHops.to_string());
                 if (nexthop.label_stack.getSize() &&
                     (m_neighOrch->getNextHopRefCount(nexthop) == 0))
                 {
@@ -2375,7 +2376,6 @@ void RouteOrch::doLabelTask(Consumer& consumer)
                 string mpls_nhs;
                 uint8_t& pop_count = ctx.pop_count;
                 bool& excp_intfs_flag = ctx.excp_intfs_flag;
-                bool overlay_nh = false;
                 string nhg_index;
 
                 for (auto i : kfvFieldsValues(t))
@@ -2418,7 +2418,7 @@ void RouteOrch::doLabelTask(Consumer& consumer)
 
                 ctx.nhg_index = nhg_index;
 
-                vector<string>& ipv = ctx.ipv;
+                vector<string> ipv;
                 vector<string> alsv;
                 vector<string> mpls_nhv;
 
@@ -2782,9 +2782,9 @@ bool RouteOrch::addLabelRoute(LabelRouteBulkContext& ctx, const NextHopGroupKey 
 
                     /* If the current next hop is part of the next hop group to sync,
                      * then return false and no need to add another temporary route. */
-                    if (it_route != m_syncdLabelRoutes.at(vrf_id).end() && it_route->second.getSize() == 1)
+                    if (it_route != m_syncdLabelRoutes.at(vrf_id).end() && it_route->second.nhg_key.getSize() == 1)
                     {
-                        NextHopKey nexthop(it_route->second.to_string());
+                        NextHopKey nexthop(it_route->second.nhg_key.to_string());
                         if (nextHops.contains(nexthop))
                         {
                             return false;
@@ -2859,7 +2859,7 @@ bool RouteOrch::addLabelRoute(LabelRouteBulkContext& ctx, const NextHopGroupKey 
     else
     {
         /* Set the packet action to forward when there was no next hop (dropped) */
-        if (it_route->second.getSize() == 0)
+        if (it_route->second.nhg_key.getSize() == 0)
         {
             vector<sai_attribute_t> inseg_attrs;
             inseg_attr.id = SAI_INSEG_ENTRY_ATTR_NEXT_HOP_ID;
@@ -3020,7 +3020,7 @@ bool RouteOrch::addLabelRoutePost(const LabelRouteBulkContext& ctx, const NextHo
             if (it_route->second.nhg_key.getSize() > 1
                 && m_syncdNextHopGroups[it_route->second.nhg_key].ref_count == 0)
             {
-                m_bulkNhgReducedRefCnt.emplace(it_route->second.nhg_key);
+                m_bulkNhgReducedRefCnt.emplace(it_route->second.nhg_key, 0);
             }
         }
         else
@@ -3038,7 +3038,7 @@ bool RouteOrch::addLabelRoutePost(const LabelRouteBulkContext& ctx, const NextHo
         }
         else
         {
-            m_bulkNhgReducedRefCnt.emplace(it_route->second, 0);
+            gNhgOrch->incNhgRefCount(ctx.nhg_index);
         }
 
         SWSS_LOG_INFO("Set label route %u with next hop(s) %s",
@@ -3118,19 +3118,19 @@ bool RouteOrch::removeLabelRoutePost(const LabelRouteBulkContext& ctx)
         /*
          * Decrease the reference count only when the route is pointing to a next hop.
          */
-        decreaseNextHopRefCount(it_route->second);
-        if (it_route->second.getSize() > 1
-            && m_syncdNextHopGroups[it_route->second].ref_count == 0)
+        decreaseNextHopRefCount(it_route->second.nhg_key);
+        if (it_route->second.nhg_key.getSize() > 1
+            && m_syncdNextHopGroups[it_route->second.nhg_key].ref_count == 0)
         {
-            m_bulkNhgReducedRefCnt.emplace(it_route->second, 0);
+            m_bulkNhgReducedRefCnt.emplace(it_route->second.nhg_key, 0);
         }
         /*
          * Additionally check if the NH has label and its ref count == 0, then
          * remove the label next hop.
          */
-        else if (it_route->second.getSize() == 1)
+        else if (it_route->second.nhg_key.getSize() == 1)
         {
-            NextHopKey nexthop(it_route->second.to_string());
+            NextHopKey nexthop(it_route->second.nhg_key.to_string());
             if (nexthop.label_stack.getSize() &&
                 (m_neighOrch->getNextHopRefCount(nexthop) == 0))
             {
