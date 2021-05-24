@@ -668,6 +668,12 @@ bool CbfNextHopGroup::update(const vector<string> &members,
                     ++member;
                 }
             }
+            else
+            {
+                SWSS_LOG_DEBUG("CBF temporary NHG member %s hasn't been "
+                                "updated", member->first.c_str());
+                ++member;
+            }
         }
     }
     /*

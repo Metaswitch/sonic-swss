@@ -63,8 +63,11 @@ class TestNextHopGroup(object):
         # Return the NHGID
         return nhgid
 
-    def get_nhgm_ids(self, nhg_index, dvs):
-        nhgid = self.get_nhg_id(nhg_index, dvs)
+    def get_nhgm_ids(self, nhg_index, dvs, nh_id=None):
+        if nh_id is None:
+            nhgid = self.get_nhg_id(nhg_index, dvs)
+        else:
+            nhgid = nh_id
         nhgms = []
         asic_db = dvs.get_asic_db()
 
@@ -835,7 +838,7 @@ class TestNextHopGroup(object):
             nhg_ps.set(nhg_index, nhg_fvs)
 
             # Wait for the group to be added
-            asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + nhg_count + 1)
+            asic_db.wait_for_n_keys(self.ASIC_NHG_STR, nhg_count + 1)
 
             # Save the NHG index/ID pair
             asic_nhgs[nhg_index] = self.get_nhg_id(nhg_index, dvs)
@@ -1849,6 +1852,239 @@ class TestNextHopGroup(object):
         nhg_ps._del('group3')
         asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count)
         asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count)
+
+    def test_cbf_nhg_exhaust(self, dvs, testlog):
+        app_db = dvs.get_app_db()
+        asic_db = dvs.get_asic_db()
+        nhg_ps = swss.ProducerStateTable(app_db.db_connection, swss.APP_NEXT_HOP_GROUP_TABLE_NAME)
+        cbf_nhg_ps = swss.ProducerStateTable(app_db.db_connection, swss.APP_CLASS_BASED_NEXT_HOP_GROUP_TABLE_NAME)
+        rt_ps = swss.ProducerStateTable(app_db.db_connection, swss.APP_ROUTE_TABLE_NAME)
+
+        MAX_ECMP_COUNT = 512
+        MAX_PORT_COUNT = 10
+
+        r = 0
+        fmt = '{{0:0{}b}}'.format(MAX_PORT_COUNT)
+        asic_nhgs_count = len(asic_db.get_keys(self.ASIC_NHG_STR))
+        nhg_count = asic_nhgs_count
+        first_valid_nhg = nhg_count
+
+        def gen_nhg_fvs(binary):
+            nexthop = []
+            ifname = []
+
+            for i in range(MAX_PORT_COUNT):
+                if binary[i] == '1':
+                    nexthop.append(self.peer_ip(i))
+                    ifname.append(self.port_name(i))
+
+            nexthop = ','.join(nexthop)
+            ifname = ','.join(ifname)
+            fvs = swss.FieldValuePairs([("nexthop", nexthop), ("ifname", ifname)])
+
+            return fvs
+
+        def gen_nhg_index(nhg_number):
+            return "group{}".format(nhg_number)
+
+        def gen_valid_binary():
+            nonlocal r
+
+            while True:
+                r += 1
+                binary = fmt.format(r)
+                # We need at least 2 ports for a nexthop group
+                if binary.count('1') <= 1:
+                    continue
+                return binary
+
+        def create_temp_nhg():
+            nonlocal nhg_count
+
+            binary = gen_valid_binary()
+            nhg_fvs = gen_nhg_fvs(binary)
+            nhg_index = gen_nhg_index(nhg_count)
+            nhg_ps.set(nhg_index, nhg_fvs)
+            nhg_count += 1
+
+            return nhg_index, binary
+
+        def delete_nhg():
+            nonlocal first_valid_nhg
+
+            del_nhg_index = gen_nhg_index(first_valid_nhg)
+            del_nhg_id = asic_nhgs[del_nhg_index]
+
+            nhg_ps._del(del_nhg_index)
+            asic_nhgs.pop(del_nhg_index)
+            first_valid_nhg += 1
+
+            return del_nhg_id
+
+        def nhg_exists(nhg_index):
+            return self.get_nhg_id(nhg_index, dvs) is not None
+
+        # Create interfaces
+        for i in range(MAX_PORT_COUNT):
+            self.config_intf(i, dvs)
+
+        asic_nhgs = {}
+
+        # Add first batch of next hop groups to reach the NHG limit
+        while nhg_count < MAX_ECMP_COUNT:
+            r += 1
+            binary = fmt.format(r)
+            # We need at least 2 ports for a nexthop group
+            if binary.count('1') <= 1:
+                continue
+            nhg_fvs = gen_nhg_fvs(binary)
+            nhg_index = gen_nhg_index(nhg_count)
+            nhg_ps.set(nhg_index, nhg_fvs)
+
+            # Wait for the group to be added
+            asic_db.wait_for_n_keys(self.ASIC_NHG_STR, nhg_count + 1)
+
+            # Save the NHG index/ID pair
+            asic_nhgs[nhg_index] = self.get_nhg_id(nhg_index, dvs)
+
+            nhg_count += 1
+
+        # Create a CBF NHG group - it should fail
+        fvs = swss.FieldValuePairs([('members', 'group2'),
+                                    ('class_map', '0:0')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        time.sleep(1)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, MAX_ECMP_COUNT)
+
+        # Delete a NHG
+        del_nhg_id = delete_nhg()
+        asic_db.wait_for_deleted_entry(self.ASIC_NHG_STR, del_nhg_id)
+
+        # The CBF NHG should be created
+        assert(nhg_exists('cbfgroup1'))
+        nhg_id = self.get_nhg_id('cbfgroup1', dvs)
+
+        # Create a temporary NHG
+        nhg_index, _ = create_temp_nhg()
+
+        # Update the NHG to contain the temporary NHG
+        fvs = swss.FieldValuePairs([('members', '{}'.format(nhg_index)),
+                                    ('class_map', '0:0')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        time.sleep(1)
+        nhgm_id = self.get_nhgm_ids(None, dvs, nhg_id)[0]
+        fvs = asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id)
+        assert(fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID'] != self.get_nhg_id('group2', dvs))
+
+        # Delete a temporary NHG
+        nh_id = self.get_nhg_id(nhg_index, dvs)
+        del_nhg_id = delete_nhg()
+        asic_db.wait_for_deleted_entry(self.ASIC_NHG_STR, del_nhg_id)
+
+        # The NHG should be promoted and the CBF NHG member updated
+        asic_db.wait_for_field_negative_match(self.ASIC_NHGM_STR,
+                                                nhgm_id,
+                        {'SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID': nh_id})
+        asic_nhgs[nhg_index] = self.get_nhg_id(nhg_index, dvs)
+
+        # Create a couple more temporary NHGs
+        nhg_index1, _ = create_temp_nhg()
+        nhg_index2, _ = create_temp_nhg()
+
+        # Update the CBF NhG to contain both of them as well
+        fvs = swss.FieldValuePairs([('members', '{},{},{}'.format(nhg_index, nhg_index1, nhg_index2)),
+                                    ('class_map', '0:0,1:1,2:2')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+
+        # The previous CBF NHG member should be deleted
+        asic_db.wait_for_deleted_entry(self.ASIC_NHGM_STR, nhgm_id)
+        nhgm_ids = self.get_nhgm_ids(None, dvs, nhg_id)
+        values = {}
+        for nhgm_id in nhgm_ids:
+            fvs = asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id)
+            values[nhgm_id] = fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID']
+
+        # Update the class map of the group
+        old_map = asic_db.get_entry(self.ASIC_NHG_STR, nhg_id)['SAI_NEXT_HOP_GROUP_ATTR_FORWARDING_CLASS_TO_INDEX_MAP']
+        members = {nhgm_id: asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id) for nhgm_id in self.get_nhgm_ids(None, dvs, nhg_id)}
+        fvs = swss.FieldValuePairs([('members', '{},{},{}'.format(nhg_index, nhg_index1, nhg_index2)),
+                                    ('class_map', '0:1,1:0,2:2')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+
+        # Check that the map was updates, but the members weren't
+        asic_db.wait_for_field_negative_match(self.ASIC_NHG_STR,
+                                                nhg_id,
+                                                {'SAI_NEXT_HOP_GROUP_ATTR_FORWARDING_CLASS_TO_INDEX_MAP': old_map})
+        for nhgm_id in self.get_nhgm_ids(None, dvs, nhg_id):
+            assert(members[nhgm_id] == asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id))
+
+        # Gradually delete temporary NHGs and check that the NHG members are
+        # updated
+        for i in range(2):
+            # Delete a temporary NHG
+            del_nhg_id = delete_nhg()
+            asic_db.wait_for_deleted_entry(self.ASIC_NHG_STR, del_nhg_id)
+
+            # Check that one of the temporary NHGs has been updated
+            diff_count = 0
+            for nhgm_id, nh_id in values.items():
+                fvs = asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id)
+                if nh_id != fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID']:
+                    values[nhgm_id] = fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID']
+                    diff_count += 1
+            assert(diff_count == 1)
+
+        for index in [nhg_index1, nhg_index2]:
+            asic_nhgs[index] = self.get_nhg_id(index, dvs)
+
+        # Create a temporary NHG
+        nhg_index, binary = create_temp_nhg()
+
+        # Update the CBF NHG to point to the new NHG
+        nhgm_ids = self.get_nhgm_ids(None, dvs, nhg_id)
+        fvs = swss.FieldValuePairs([('members', nhg_index), ('class_map', '0:0')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        asic_db.wait_for_deleted_keys(self.ASIC_NHGM_STR, nhgm_ids)
+
+        # Update the temporary NHG to force using a new designated NH
+        new_binary = []
+
+        for i in range(len(binary)):
+            if binary[i] == '1':
+                new_binary.append('0')
+            else:
+                new_binary.append('1')
+
+        binary = ''.join(new_binary)
+        assert binary.count('1') > 1
+
+
+        nh_id = self.get_nhg_id(nhg_index, dvs)
+        nhg_fvs = gen_nhg_fvs(binary)
+        nhg_ps.set(nhg_index, nhg_fvs)
+
+        # The CBF NHG member's NH attribute should be updated
+        nhgm_id = self.get_nhgm_ids(None, dvs, nhg_id)[0]
+        asic_db.wait_for_field_negative_match(self.ASIC_NHGM_STR,
+                                                nhgm_id,
+                                                {'SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID': nh_id})
+
+        # Delete a NHG
+        del_nhg_id = delete_nhg()
+        asic_db.wait_for_deleted_entry(self.ASIC_NHG_STR, del_nhg_id)
+
+        # The temporary group should be promoted
+        nh_id = self.get_nhg_id(nhg_index, dvs)
+        asic_db.wait_for_field_match(self.ASIC_NHGM_STR,
+                                    nhgm_id,
+                                    {'SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID': nh_id})
+        asic_nhgs[nhg_index] = nh_id
+
+        # Delete the NHGs
+        cbf_nhg_ps._del('cbfgroup1')
+        for k in asic_nhgs:
+            nhg_ps._del(k)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count)
 
 # Add Dummy always-pass test at end as workaroud
 # for issue when Flaky fail on final test it invokes module tear-down before retrying
