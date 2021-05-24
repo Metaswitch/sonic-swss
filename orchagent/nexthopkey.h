@@ -4,6 +4,7 @@
 #include "ipaddress.h"
 #include "tokenize.h"
 #include "label.h"
+#include "intfsorch.h"
 
 #define LABELSTACK_DELIMITER '+'
 #define NH_DELIMITER '@'
@@ -32,6 +33,8 @@ struct NextHopKey
     NextHopKey(const std::string &str) :
         vni(0), mac_address(), outseg_type(SAI_OUTSEG_TYPE_SWAP)
     {
+        SWSS_LOG_ENTER();
+
         if (str.find(NHG_DELIMITER) != string::npos)
         {
             std::string err = "Error converting " + str + " to NextHop";
@@ -173,6 +176,12 @@ struct NextHopKey
             str += label_stack.to_string() + LABELSTACK_DELIMITER;
         }
         return str;
+    }
+    
+    // Method to get the underlying IP/interface pair for the next hop.
+    NextHopKey ipKey() const
+    {
+        return NextHopKey(ip_address, alias);
     }
 };
 

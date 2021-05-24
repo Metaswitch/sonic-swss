@@ -420,6 +420,8 @@ class TestRoute(TestRouteBase):
     def test_RouteAddRemoveIpv4RouteUnresolvedNeigh(self, dvs, testlog):
         self.setup_db(dvs)
 
+        dvs.runcmd('swssloglevel -c orchagent -l DEBUG')
+
         self.clear_srv_config(dvs)
 
         # create l3 interface
