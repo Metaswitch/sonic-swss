@@ -32,6 +32,7 @@ orchagent_SOURCES = \
             orchdaemon.cpp \
             orch.cpp \
             notifications.cpp \
+            nhgorch.cpp \ 
             routeorch.cpp \
             neighorch.cpp \
             intfsorch.cpp \
