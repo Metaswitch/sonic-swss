@@ -731,7 +731,7 @@ NextHopGroup NonCbfNhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
          */
         if (gNeighOrch->hasNextHop(nh_key.ipKey()))
         {
-            SWSS_LOG_INFO("Next hop %s is a candidate for temporary group %s",
+            SWSS_LOG_DEBUG("Next hop %s is a candidate for temporary group %s",
                             nh_key.to_string().c_str(),
                             nhg_key.to_string().c_str());
             valid_nhs.push_back(nh_key);
@@ -751,6 +751,8 @@ NextHopGroup NonCbfNhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
     advance(it, rand() % valid_nhs.size());
 
     /* Create the temporary group. */
+    SWSS_LOG_INFO("Using next hop %s for the temporary NHG",
+                    it->to_string().c_str());
     NextHopGroup nhg(NextHopGroupKey(it->to_string()));
     nhg.setTemp(true);
 
@@ -957,13 +959,13 @@ bool NextHopGroup::desyncMembers(const std::set<NextHopKey>& nh_keys)
 
     for (const auto& nh_key : nh_keys)
     {
-        SWSS_LOG_INFO("Desyncing member %s", nh_key.to_string().c_str());
+        SWSS_LOG_DEBUG("Desyncing member %s", nh_key.to_string().c_str());
 
         const WeightedNhgMember& nhgm = m_members.at(nh_key);
 
         if (nhgm.isSynced())
         {
-            SWSS_LOG_INFO("Removing next hop group member %s",
+            SWSS_LOG_DEBUG("Removing next hop group member %s",
                             nh_key.to_string().c_str());
             nextHopGroupMemberBulker.remove_entry(&statuses[nh_key],
                                                     nhgm.getId());
@@ -982,12 +984,12 @@ bool NextHopGroup::desyncMembers(const std::set<NextHopKey>& nh_keys)
 
     for (const auto& status : statuses)
     {
-        SWSS_LOG_INFO("Check member's %s status",
+        SWSS_LOG_DEBUG("Check member's %s status",
                         status.first.to_string().c_str());
 
         if (status.second == SAI_STATUS_SUCCESS)
         {
-            SWSS_LOG_INFO("Member was successfully desynced");
+            SWSS_LOG_DEBUG("Member was successfully desynced");
             m_members.at(status.first).desync();
         }
         else
@@ -998,7 +1000,7 @@ bool NextHopGroup::desyncMembers(const std::set<NextHopKey>& nh_keys)
         }
     }
 
-    SWSS_LOG_INFO("Returning %d", success);
+    SWSS_LOG_DEBUG("Returning %d", success);
 
     return success;
 }

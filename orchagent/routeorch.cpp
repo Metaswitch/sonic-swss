@@ -1496,7 +1496,7 @@ bool RouteOrch::addNextHopGroup(const NextHopGroupKey &nexthops)
     }
 
     gNhgOrch->incSyncedNhgCount();
-    SWSS_LOG_NOTICE("Create next hop group %s", nexthops.to_string().c_str());
+    SWSS_LOG_INFO("Create next hop group %s", nexthops.to_string().c_str());
 
     gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
 
@@ -1582,7 +1582,7 @@ bool RouteOrch::removeNextHopGroup(const NextHopGroupKey &nexthops)
     }
 
     next_hop_group_id = next_hop_group_entry->second.next_hop_group_id;
-    SWSS_LOG_NOTICE("Delete next hop group %s", nexthops.to_string().c_str());
+    SWSS_LOG_INFO("Delete next hop group %s", nexthops.to_string().c_str());
 
     vector<sai_object_id_t> next_hop_ids;
     auto& nhgm = next_hop_group_entry->second.nhopgroup_members;
@@ -1880,7 +1880,7 @@ bool RouteOrch::addRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextHops)
 
                         if (nextHops.contains(nexthop))
                         {
-                            SWSS_LOG_NOTICE("Temporary route already added via %s",
+                            SWSS_LOG_INFO("Temporary route already added via %s",
                                             nexthop.to_string().c_str());
                             return false;
                         }
@@ -1889,7 +1889,7 @@ bool RouteOrch::addRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextHops)
                     /* Add a temporary route when a next hop group cannot be added,
                     * and there is no temporary route right now or the current temporary
                     * route is not pointing to a member of the next hop group to sync. */
-                    SWSS_LOG_NOTICE("Adding temporary route");
+                    SWSS_LOG_INFO("Adding temporary route");
                     addTempRoute(ctx, nextHops);
                     /* Return false since the original route is not successfully added */
                     return false;
@@ -1977,7 +1977,7 @@ bool RouteOrch::addRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextHops)
         }
     }
 
-    SWSS_LOG_NOTICE("Added route %s with next hop(s) %s",
+    SWSS_LOG_INFO("Added route %s with next hop(s) %s",
                     ipPrefix.to_string().c_str(),
                     nextHops.to_string().c_str());
 
@@ -2152,7 +2152,7 @@ bool RouteOrch::addRoutePost(const RouteBulkContext& ctx, const NextHopGroupKey 
             gNhgOrch->incNhgRefCount(ctx.nhg_index);
         }
 
-        SWSS_LOG_NOTICE("Post create route %s with next hop(s) %s",
+        SWSS_LOG_INFO("Post create route %s with next hop(s) %s",
                 ipPrefix.to_string().c_str(), nextHops.to_string().c_str());
     }
     else
@@ -2198,7 +2198,7 @@ bool RouteOrch::addRoutePost(const RouteBulkContext& ctx, const NextHopGroupKey 
                 }
                 else if (it_route->second.nhg_key.is_overlay_nexthop())
                 {
-                    SWSS_LOG_NOTICE("Update overlay Nexthop %s", it_route->second.nhg_key.to_string().c_str());
+                    SWSS_LOG_INFO("Update overlay Nexthop %s", it_route->second.nhg_key.to_string().c_str());
                     removeOverlayNextHops(vrf_id, it_route->second.nhg_key);
                 }
             }
@@ -2223,7 +2223,7 @@ bool RouteOrch::addRoutePost(const RouteBulkContext& ctx, const NextHopGroupKey 
             gNhgOrch->incNhgRefCount(ctx.nhg_index);
         }
 
-        SWSS_LOG_NOTICE("Post set route %s with next hop(s) %s",
+        SWSS_LOG_INFO("Post set route %s with next hop(s) %s",
                 ipPrefix.to_string().c_str(), nextHops.to_string().c_str());
     }
 

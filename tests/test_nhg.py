@@ -652,6 +652,7 @@ class TestNextHopGroup(object):
         asic_routes_count += MAX_ECMP_COUNT
 
         # Add a route with labeled NHs
+        time.sleep(1)
         asic_nhs_count = len(asic_db.get_keys(self.ASIC_NHS_STR))
         route_ipprefix = gen_ipprefix(route_count)
         fvs = swss.FieldValuePairs([('nexthop', '1+10.0.0.1,3+10.0.0.3'),
@@ -1018,12 +1019,15 @@ class TestNextHopGroup(object):
         prev_nhg_id = nhg_id
 
         # Create a temporary next hop groups
+        dvs.runcmd('swssloglevel -c orchagent -l INFO')
         nhg_index, binary = create_temp_nhg()
-        nhg_id = self.get_nhg_id(nhg_index, dvs)
 
         # Update the route to point to the temporary group
         fvs = swss.FieldValuePairs([('nexthop_group', nhg_index)])
         rt_ps.set('2.2.2.0/24', fvs)
+        asic_db.wait_for_deleted_entry(self.ASIC_NHG_STR, prev_nhg_id)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, MAX_ECMP_COUNT)
+        nhg_id = self.get_nhg_id(nhg_index, dvs)
         asic_db.wait_for_field_match(self.ASIC_RT_STR,
                                         rt_id,
                                         {'SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID': nhg_id})
