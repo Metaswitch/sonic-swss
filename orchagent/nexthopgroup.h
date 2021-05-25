@@ -14,12 +14,12 @@ using namespace std;
 
 extern CrmOrch *gCrmOrch;
 
-template <typename Index>
+template <typename Key>
 class NhgMember
 {
 public:
-    explicit NhgMember(const Index &key) : m_key(key), m_id(SAI_NULL_OBJECT_ID)
-        { SWSS_LOG_ENTER(); }
+    explicit NhgMember(const Key &key) :
+        m_key(key), m_id(SAI_NULL_OBJECT_ID) { SWSS_LOG_ENTER(); }
 
     NhgMember(NhgMember &&nhgm) : m_key(move(nhgm.m_key)), m_id(nhgm.m_id)
         { SWSS_LOG_ENTER(); nhgm.m_id = SAI_NULL_OBJECT_ID; }
@@ -101,7 +101,7 @@ public:
     /*
      * Getters.
      */
-    inline Index getKey() const { return m_key; }
+    inline Key getKey() const { return m_key; }
     inline sai_object_id_t getId() const { return m_id; }
 
     /*
@@ -118,7 +118,7 @@ protected:
     /*
      * The index / key of this NHG member.
      */
-    Index m_key;
+    Key m_key;
 
     /*
      * The SAI ID of this NHG member.
@@ -206,7 +206,7 @@ protected:
  * NhgCommon class representing the common base class between
  * NextHopGroup and CbfNextHopGroup classes.
  */
-template <typename Key, typename MbrIndex, typename Mbr>
+template <typename Key, typename MbrKey, typename Mbr>
 class NhgCommon : public NhgBase
 {
 public:
@@ -235,7 +235,7 @@ public:
     /*
      * Check if the group contains the given member.
      */
-    inline bool hasMember(const MbrIndex &key) const
+    inline bool hasMember(const MbrKey &key) const
         { SWSS_LOG_ENTER(); return m_members.find(key) != m_members.end(); }
 
     /*
@@ -259,17 +259,17 @@ protected:
     /*
      * The members of this group.
      */
-    map<MbrIndex, Mbr> m_members;
+    map<MbrKey, Mbr> m_members;
 
     /*
      * Sync the given members in the group.
      */
-    virtual bool syncMembers(const set<MbrIndex> &mbr_indexes) = 0;
+    virtual bool syncMembers(const set<MbrKey> &mbr_indexes) = 0;
 
     /*
      * Desync the given members from the group.
      */
-    virtual bool desyncMembers(const set<MbrIndex> &mbr_indexes) = 0;
+    virtual bool desyncMembers(const set<MbrKey> &mbr_indexes) = 0;
 
     /*
      * Get the SAI attributes for creating a next hop group member over SAI.

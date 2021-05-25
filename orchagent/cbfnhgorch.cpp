@@ -744,6 +744,11 @@ bool CbfNextHopGroup::update(const vector<string> &members,
         auto status = sai_next_hop_group_api->set_next_hop_group_attribute(
                                                             m_id, &nhg_attr);
 
+        /*
+         * Free the class map attribute resources.
+         */
+        delete[] nhg_attr.value.maplist.list;
+
         if (status != SAI_STATUS_SUCCESS)
         {
             SWSS_LOG_ERROR("Failed to update CBF next hop group %s, rv %d",
