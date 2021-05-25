@@ -11,8 +11,6 @@ extern CrmOrch *gCrmOrch;
 
 extern sai_next_hop_group_api_t* sai_next_hop_group_api;
 
-#define FC_MAX_VAL 63
-
 /*
  * Purpose:     Perform the operations requested by APPL_DB users.
  *
@@ -264,10 +262,10 @@ tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
     }
 
     /*
-     * Verify that the class map contains valid data. The FC should be
-     * between 0 and 63 (inclusive), and the index should be between
-     * 1 and the size of members (inclusive). Also, the FC values
-     * should be unique (the same FC can't be mapped more than once).
+     * Verify that the class map contains valid data. The FC should be greater
+     * than 0, and the index should be between 0 and the size of members
+     * (exclusive). Also, the FC values should be unique (the same FC can't be
+     * mapped more than once).
      */
     unordered_map<uint8_t, uint8_t> class_map_map;
 
@@ -293,10 +291,10 @@ tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
              */
             auto fc = stoi(tokens[0]);
 
-            if ((fc < 0) || (fc > FC_MAX_VAL))
+            if (fc < 0)
             {
-                SWSS_LOG_ERROR("CBF next hop group class map contains invalid "
-                                "FC %d", fc);
+                SWSS_LOG_ERROR("CBF next hop group class map contains negative"
+                                " FC %d", fc);
                 return make_tuple(false,
                                        vector<string>(),
                                        unordered_map<uint8_t, uint8_t>());

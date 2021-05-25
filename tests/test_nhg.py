@@ -1717,7 +1717,6 @@ class TestNextHopGroup(object):
             ('group1,group1', '0:0,1:1'), # non-unique members
             ('group1,group2', '0;0,1:1'), # ill-formed class map
             ('group1,group2', '-1:0,1:1'), # negative FC value
-            ('group1,group2', '64:0,1:1'), # invalid FC value
             ('group1,group2', '0:-1,1:1'), # negative indeex
             ('group1,group2', '0:2,1:1'), # index out of range
             ('group1,group2', '0:0,0:1'), # non-unique class map
