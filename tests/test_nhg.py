@@ -258,7 +258,7 @@ class TestNextHopGroup(object):
         asic_nhs_count = len(asic_db.get_keys(self.ASIC_NHS_STR))
 
         # Add a group containing labeled weighted NHs
-        fvs = swsscommon.FieldValuePairs([('nexthop', '1+10.0.0.1,3+10.0.0.3'),
+        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
                                             ('ifname', 'Ethernet0,Ethernet4'),
                                             ('weight', '2,4')])
         nhg_ps.set('group1', fvs)
@@ -269,7 +269,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHS_STR, asic_nhs_count + 2)
 
         # Create a new single next hop with the same label
-        fvs = swsscommon.FieldValuePairs([('nexthop', '1+10.0.0.1'),
+        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+1+10.0.0.1'),
                                             ('ifname', 'Ethernet0')])
         nhg_ps.set('group2', fvs)
 
@@ -278,7 +278,7 @@ class TestNextHopGroup(object):
         assert len(asic_db.get_keys(self.ASIC_NHS_STR)) == asic_nhs_count + 2
 
         # Create a new single next hop with a different label
-        fvs = swsscommon.FieldValuePairs([('nexthop', '2+10.0.0.1'),
+        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+2+10.0.0.1'),
                                             ('ifname', 'Ethernet0')])
         nhg_ps.set('group3', fvs)
 
@@ -411,6 +411,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 4)
 
         # Assert the next hop group ID changed
+        time.sleep(1)
         assert asic_db.get_entry(self.ASIC_RT_STR, rt_key)['SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID'] != nhgid
         nhgid = asic_db.get_entry(self.ASIC_RT_STR, rt_key)['SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID']
 
@@ -453,7 +454,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count)
 
         # Create a route with labeled NHs
-        fvs = swsscommon.FieldValuePairs([('nexthop', '1+10.0.0.1,3+10.0.0.3'),
+        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
                                             ('ifname', 'Ethernet0,Ethernet4'),
                                             ('weight', '2,4')])
         rt_ps.set('2.2.2.0/24', fvs)
@@ -470,7 +471,7 @@ class TestNextHopGroup(object):
         assert len(asic_db.get_keys(self.ASIC_NHS_STR)) == asic_nhs_count + 2
 
         # Update the group with a different NH
-        fvs = swsscommon.FieldValuePairs([('nexthop', '2+10.0.0.1,3+10.0.0.3'),
+        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+2+10.0.0.1,push+3+10.0.0.3'),
                                             ('ifname', 'Ethernet0,Ethernet4'),
                                             ('weight', '2,4')])
         nhg_ps.set('group1', fvs)
@@ -590,7 +591,7 @@ class TestNextHopGroup(object):
         # Add a route with labeled NHs
         asic_nhs_count = len(asic_db.get_keys(self.ASIC_NHS_STR))
         route_ipprefix = gen_ipprefix(route_count)
-        fvs = swsscommon.FieldValuePairs([('nexthop', '1+10.0.0.1,3+10.0.0.3'),
+        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
                                             ('ifname', 'Ethernet0,Ethernet4')])
         ps.set(route_ipprefix, fvs)
         route_count += 1
@@ -1009,7 +1010,7 @@ class TestNextHopGroup(object):
         # Create a next hop group that contains labeled NHs that do not exist
         # in NeighOrch
         asic_nhs_count = len(asic_db.get_keys(self.ASIC_NHS_STR))
-        fvs = swsscommon.FieldValuePairs([('nexthop', '1+10.0.0.1,3+10.0.0.3'),
+        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
                                             ('ifname', 'Ethernet0,Ethernet4')])
         nhg_index = gen_nhg_index(nhg_count)
         nhg_ps.set(nhg_index, fvs)

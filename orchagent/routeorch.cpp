@@ -1725,56 +1725,35 @@ bool RouteOrch::addRoutePost(const RouteBulkContext& ctx, const NextHopGroupKey 
             const NextHopKey& nexthop = *nextHops.getNextHops().begin();
             if (nexthop.isIntfNextHop())
             {
-                NextHopKey nexthop;
-                if(nextHops.is_overlay_nexthop()) {
-                    nexthop = NextHopKey(nextHops.to_string(), true);
-                } else {
-                    nexthop = NextHopKey(nextHops.to_string());
-                }
-
-                if (nexthop.ip_address.isZero())
+                auto next_hop_id = m_intfsOrch->getRouterIntfsId(nexthop.alias);
+                /* rif is not created yet */
+                if (next_hop_id == SAI_NULL_OBJECT_ID)
                 {
-                    sai_object_id_t next_hop_id = m_intfsOrch->getRouterIntfsId(nexthop.alias);
-                    /* rif is not created yet */
-                    if (next_hop_id == SAI_NULL_OBJECT_ID)
-                    {
-                        SWSS_LOG_WARN("Failed to get next hop %s for %s",
-                                nextHops.to_string().c_str(), ipPrefix.to_string().c_str());
-                        return false;
-                    }
-                }
-                else
-                {
-                    if (!m_neighOrch->hasNextHop(nexthop))
-                    {
-                        SWSS_LOG_WARN("Failed to get next hop %s for %s",
-                                nextHops.to_string().c_str(), ipPrefix.to_string().c_str());
-                        return false;
-                    }
+                    SWSS_LOG_WARN("Failed to get next hop %s for %s",
+                            nextHops.to_string().c_str(), ipPrefix.to_string().c_str());
+                    return false;
                 }
             }
-            /* The route is pointing to a next hop group */
             else
             {
-                if (!hasNextHopGroup(nextHops))
+                if (!m_neighOrch->hasNextHop(nexthop))
                 {
-                    SWSS_LOG_WARN("Next hop group is temporary, represented by %s",
-                                    ctx.tmp_next_hop.to_string().c_str());
-                    // Previous added an temporary route
-                    auto& tmp_next_hop = ctx.tmp_next_hop;
-                    addRoutePost(ctx, tmp_next_hop);
+                    SWSS_LOG_WARN("Failed to get next hop %s for %s",
+                            nextHops.to_string().c_str(), ipPrefix.to_string().c_str());
                     return false;
                 }
             }
         }
+        /* The route is pointing to a next hop group */
         else
         {
-            SWSS_LOG_INFO("NhgOrch owns the next hop group with index %s",
-                            ctx.nhg_index.c_str());
-            if (!gNhgOrch->hasNhg(ctx.nhg_index))
+            if (!hasNextHopGroup(nextHops))
             {
-                SWSS_LOG_WARN("Failed to get next hop group with index %s",
-                                ctx.nhg_index.c_str());
+                SWSS_LOG_WARN("Next hop group is temporary, represented by %s",
+                                ctx.tmp_next_hop.to_string().c_str());
+                // Previous added an temporary route
+                auto& tmp_next_hop = ctx.tmp_next_hop;
+                addRoutePost(ctx, tmp_next_hop);
                 return false;
             }
         }
@@ -2158,6 +2137,12 @@ bool RouteOrch::removeRoutePost(const RouteBulkContext& ctx)
                 SWSS_LOG_NOTICE("Remove overlay Nexthop %s", ol_nextHops.to_string().c_str());
                 m_bulkNhgReducedRefCnt.emplace(ol_nextHops, vrf_id);
             }
+        }
+        else
+        {
+            SWSS_LOG_INFO("Decrement NhgOrch's NHG %s ref count",
+                        it_route->second.nhg_index.c_str());
+            gNhgOrch->decNhgRefCount(it_route->second.nhg_index);
         }
     }
 
@@ -2907,12 +2892,13 @@ bool RouteOrch::addLabelRoutePost(const LabelRouteBulkContext& ctx, const NextHo
     /* Check that the next hop group is not owned by NhgOrch. */
     if (ctx.nhg_index.empty())
     {
-        NextHopKey nexthop(nextHops.to_string());
-        if (nexthop.isIntfNextHop())
+        /* The route is pointing to a next hop */
+        if (nextHops.getSize() == 1)
         {
             NextHopKey nexthop(nextHops.to_string());
-            if (nexthop.ip_address.isZero())
+            if (nexthop.isIntfNextHop())
             {
+                
                 next_hop_id = m_intfsOrch->getRouterIntfsId(nexthop.alias);
                 /* rif is not created yet */
                 if (next_hop_id == SAI_NULL_OBJECT_ID)
