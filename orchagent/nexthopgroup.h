@@ -9,10 +9,15 @@
 #include "orch.h"
 #include "crmorch.h"
 #include "nexthopgroupkey.h"
+#include "bulker.h"
 
 using namespace std;
 
+extern sai_object_id_t gSwitchId;
+
 extern CrmOrch *gCrmOrch;
+
+extern sai_next_hop_group_api_t* sai_next_hop_group_api;
 
 template <typename Key>
 class NhgMember
@@ -158,16 +163,6 @@ public:
                                     { SWSS_LOG_ENTER(); return m_syncedCount; }
 
     /*
-     * Sync the group, generating a SAI ID.
-     */
-    virtual bool sync() = 0;
-
-    /*
-     * Desync the group, releasing the SAI ID.
-     */
-    virtual bool desync() = 0;
-
-    /*
      * Check if the next hop group is synced or not.
      */
     inline bool isSynced() const { return m_id != SAI_NULL_OBJECT_ID; }
@@ -203,8 +198,8 @@ protected:
 };
 
 /*
- * NhgCommon class representing the common base class between
- * NextHopGroup and CbfNextHopGroup classes.
+ * NhgCommon class representing the common templated base class between
+ * NonCbfNhg and CbfNhg classes.
  */
 template <typename Key, typename MbrKey, typename Mbr>
 class NhgCommon : public NhgBase
@@ -246,6 +241,70 @@ public:
                                 { SWSS_LOG_ENTER(); return m_members.size(); }
 
     /*
+     * Sync the group, generating a SAI ID.
+     */
+    virtual bool sync() = 0;
+
+    /*
+     * Desync the group, releasing the SAI ID.
+     */
+    virtual bool desync()
+    {
+        SWSS_LOG_ENTER();
+
+        /*
+         * If the group is already desynced, there is nothing to be done.
+         */
+        if (!isSynced())
+        {
+            SWSS_LOG_INFO("Next hop group is already desynced");
+            return true;
+        }
+
+        /*
+         * Desync the group members.
+         */
+        set<MbrKey> members;
+
+        for (const auto &member : m_members)
+        {
+            members.insert(member.first);
+        }
+
+        if (!desyncMembers(members))
+        {
+            SWSS_LOG_ERROR("Failed to desync next hop group %s members",
+                            to_string().c_str());
+            return false;
+        }
+
+        /*
+         * Remove the NHG over SAI.
+         */
+        auto status = sai_next_hop_group_api->remove_next_hop_group(m_id);
+
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_ERROR("Failed to remove next hop group %s, rv: %d",
+                            to_string().c_str(), status);
+            return false;
+        }
+
+        /*
+         * Decrease the number of programmed NHGs.
+         */
+        gCrmOrch->decCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
+        decSyncedCount();
+
+        /*
+         * Reset the group ID.
+         */
+        m_id = SAI_NULL_OBJECT_ID;
+
+        return true;
+    }
+
+    /*
      * Get a string representation of this next hop group.
      */
     virtual string to_string() const = 0;
@@ -264,12 +323,79 @@ protected:
     /*
      * Sync the given members in the group.
      */
-    virtual bool syncMembers(const set<MbrKey> &mbr_indexes) = 0;
+    virtual bool syncMembers(const set<MbrKey> &member_keys) = 0;
 
     /*
      * Desync the given members from the group.
      */
-    virtual bool desyncMembers(const set<MbrKey> &mbr_indexes) = 0;
+    virtual bool desyncMembers(const set<MbrKey> &member_keys)
+    {
+        SWSS_LOG_ENTER();
+
+        SWSS_LOG_INFO("Desyincing members of next hop group %s",
+                        to_string().c_str());
+
+        /*
+         * Desync all the given members from the group.
+         */
+        ObjectBulker<sai_next_hop_group_api_t> bulker(sai_next_hop_group_api,
+                                                        gSwitchId);
+        map<MbrKey, sai_status_t> statuses;
+
+        for (const auto &key : member_keys)
+        {
+
+            const auto &nhgm = m_members.at(key);
+
+            SWSS_LOG_INFO("Desyncing next hop group member %s",
+                            nhgm.to_string().c_str());
+
+            if (nhgm.isSynced())
+            {
+                SWSS_LOG_DEBUG("Next hop group member is synced");
+                bulker.remove_entry(&statuses[key], nhgm.getId());
+            }
+        }
+
+        /*
+         * Flush the bulker to desync the members.
+         */
+        bulker.flush();
+
+        /*
+         * Iterate over the returned statuses and check if the removal was
+         * successful.  If it was, desync the member, otherwise log an error
+         * message.
+         */
+        bool success = true;
+
+        for (const auto &status : statuses)
+        {
+            auto &member = m_members.at(status.first);
+
+            SWSS_LOG_DEBUG("Verifying next hop group member %s status",
+                            member.to_string().c_str());
+
+            if (status.second == SAI_STATUS_SUCCESS)
+            {
+                SWSS_LOG_DEBUG("Next hop group member was successfully "
+                                "desynced");
+                member.desync();
+            }
+            else
+            {
+                SWSS_LOG_ERROR("Failed to desync next hop group member %s, rv: "
+                                "%d",
+                                member.to_string().c_str(),
+                                status.second);
+                success = false;
+            }
+        }
+
+        SWSS_LOG_DEBUG("Returning %d", success);
+
+        return success;
+    }
 
     /*
      * Get the SAI attributes for creating a next hop group member over SAI.

@@ -92,7 +92,7 @@ void NonCbfNhgOrch::doTask(Consumer& consumer)
                 * actual group when there are enough resources.
                 */
                 if ((nhg_key.getSize() > 1) &&
-                    (NextHopGroup::getSyncedCount() >= NhgOrch::getMaxNhgCount()))
+                    (NonCbfNhg::getSyncedCount() >= NhgOrch::getMaxNhgCount()))
                 {
                     SWSS_LOG_WARN("Next hop group count reached it's limit.");
 
@@ -105,7 +105,7 @@ void NonCbfNhgOrch::doTask(Consumer& consumer)
                         {
                             SWSS_LOG_INFO("Temporary NHG successfully synced");
                             m_syncedNhgs.emplace(index,
-                                    NhgEntry<NextHopGroup>(std::move(nhg)));
+                                        NhgEntry<NonCbfNhg>(std::move(nhg)));
                         }
                         else
                         {
@@ -131,14 +131,14 @@ void NonCbfNhgOrch::doTask(Consumer& consumer)
                 }
                 else
                 {
-                    auto nhg = NextHopGroup(nhg_key);
+                    auto nhg = NonCbfNhg(nhg_key);
                     success = nhg.sync();
 
                     if (success)
                     {
                         SWSS_LOG_INFO("NHG successfully synced");
                         m_syncedNhgs.emplace(index,
-                                    NhgEntry<NextHopGroup>(std::move(nhg)));
+                                        NhgEntry<NonCbfNhg>(std::move(nhg)));
                     }
                 }
             }
@@ -175,7 +175,8 @@ void NonCbfNhgOrch::doTask(Consumer& consumer)
                  */
                 else if (nhg.isTemp() &&
                          (nhg_key.getSize() > 1) &&
-                         (NextHopGroup::getSyncedCount() >= NhgOrch::getMaxNhgCount()))
+                         (NonCbfNhg::getSyncedCount() >=
+                                                    NhgOrch::getMaxNhgCount()))
                 {
                     /*
                      * If the group was updated in such way that the previously
@@ -573,7 +574,7 @@ WeightedNhgMember::~WeightedNhgMember()
  *
  * Returns:     Nothing.
  */
-NextHopGroup::NextHopGroup(const NextHopGroupKey& key) :
+NonCbfNhg::NonCbfNhg(const NextHopGroupKey& key) :
     NhgCommon(key),
     m_is_temp(false)
 {
@@ -595,7 +596,7 @@ NextHopGroup::NextHopGroup(const NextHopGroupKey& key) :
  *
  * Returns:     Referene to this object.
  */
-NextHopGroup& NextHopGroup::operator=(NextHopGroup&& nhg)
+NonCbfNhg& NonCbfNhg::operator=(NonCbfNhg&& nhg)
 {
     SWSS_LOG_ENTER();
 
@@ -619,7 +620,7 @@ NextHopGroup& NextHopGroup::operator=(NextHopGroup&& nhg)
  * Returns:     true, if the operation was successful;
  *              false, otherwise.
  */
-bool NextHopGroup::sync()
+bool NonCbfNhg::sync()
 {
     SWSS_LOG_ENTER();
 
@@ -714,7 +715,7 @@ bool NextHopGroup::sync()
  *
  * Returns:     The created temporary next hop group.
  */
-NextHopGroup NonCbfNhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
+NonCbfNhg NonCbfNhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Syncing temporary group %s", nhg_key.to_string().c_str());
@@ -753,7 +754,7 @@ NextHopGroup NonCbfNhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
     /* Create the temporary group. */
     SWSS_LOG_INFO("Using next hop %s for the temporary NHG",
                     it->to_string().c_str());
-    NextHopGroup nhg(NextHopGroupKey(it->to_string()));
+    NonCbfNhg nhg(NextHopGroupKey(it->to_string()));
     nhg.setTemp(true);
 
     return nhg;
@@ -770,54 +771,22 @@ NextHopGroup NonCbfNhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
  * Returns:     true, if the operation was successful;
  *              false, otherwise
  */
-bool NextHopGroup::desync()
+bool NonCbfNhg::desync()
 {
     SWSS_LOG_ENTER();
-    SWSS_LOG_INFO("Desyncing group %s", to_string().c_str());
+    SWSS_LOG_INFO("Desyncing non CBF group %s", to_string().c_str());
 
-    /* If the group is already desynced, there is nothing to be done. */
-    if (!isSynced())
+    /*
+     * If the group has just one member, simply reset it's SAI ID.
+     */
+    if (m_members.size() == 1)
     {
-        SWSS_LOG_INFO("Group %s is already desynced",
-                        m_key.to_string().c_str());
+        SWSS_LOG_INFO("Group has just one member");
+        m_id = SAI_NULL_OBJECT_ID;
         return true;
     }
 
-    /*
-     * If the group has more than one members, desync it's members, then the
-     * group.
-     */
-    if (m_members.size() > 1)
-    {
-        /* Desync group's members. If we failed to desync the members, exit. */
-        if (!desyncMembers(m_key.getNextHops()))
-        {
-            SWSS_LOG_ERROR("Failed to desync group %s members",
-                            to_string().c_str());
-            return false;
-        }
-
-        /* Desync the group. */
-        sai_status_t status = sai_next_hop_group_api->
-                                            remove_next_hop_group(m_id);
-
-        if (status != SAI_STATUS_SUCCESS)
-        {
-            SWSS_LOG_ERROR("Failed to remove next hop group %lu, rv: %d",
-                            m_id, status);
-            return false;
-        }
-
-        /* If the operation is successful, release the resources. */
-        gCrmOrch->decCrmResUsedCounter(
-                                CrmResourceType::CRM_NEXTHOP_GROUP);
-        --m_syncedCount;
-    }
-
-    /* Reset the group ID. */
-    m_id = SAI_NULL_OBJECT_ID;
-
-    return true;
+    return NhgCommon::desync();
 }
 
 /*
@@ -833,7 +802,7 @@ bool NextHopGroup::desync()
  * Returns:     true, if the members were added succesfully;
  *              false, otherwise.
  */
-bool NextHopGroup::syncMembers(const std::set<NextHopKey>& nh_keys)
+bool NonCbfNhg::syncMembers(const std::set<NextHopKey>& nh_keys)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Adding next hop group %s members",
@@ -862,7 +831,7 @@ bool NextHopGroup::syncMembers(const std::set<NextHopKey>& nh_keys)
         WeightedNhgMember& nhgm = m_members.at(nh_key);
 
         /* If the member is already synced, continue. */
-        if (nhgm.getId() != SAI_NULL_OBJECT_ID)
+        if (nhgm.isSynced())
         {
             SWSS_LOG_INFO("Update member");
             continue;
@@ -925,85 +894,6 @@ bool NextHopGroup::syncMembers(const std::set<NextHopKey>& nh_keys)
 
     return success;
 }
-/*
- * Purpose:     Desync the given group's members over the SAI API.
- *
- * Description: Go through the given members and desync them.
- *
- * Params:      IN  nh_keys - The next hop keys of the members to desync.
- *
- * Returns:     true, if the operation was successful;
- *              false, otherwise
- */
-bool NextHopGroup::desyncMembers(const std::set<NextHopKey>& nh_keys)
-{
-    SWSS_LOG_ENTER();
-    SWSS_LOG_INFO("Removing members of group %s",
-                    to_string().c_str());
-
-    /* This method should not be called for groups with only one NH. */
-    assert(m_members.size() > 1);
-
-    ObjectBulker<sai_next_hop_group_api_t> nextHopGroupMemberBulker(
-                                            sai_next_hop_group_api, gSwitchId);
-
-    /*
-     * Iterate through the given group members add them to be desynced.
-     *
-     * Keep track of the SAI delete statuses in case one of them returns an
-     * error.  We assume that deletion should always succeed.  If for some
-     * reason it doesn't, there's nothing we can do, but we'll log an error
-     * later.
-     */
-    std::map<NextHopKey, sai_status_t> statuses;
-
-    for (const auto& nh_key : nh_keys)
-    {
-        SWSS_LOG_DEBUG("Desyncing member %s", nh_key.to_string().c_str());
-
-        const WeightedNhgMember& nhgm = m_members.at(nh_key);
-
-        if (nhgm.isSynced())
-        {
-            SWSS_LOG_DEBUG("Removing next hop group member %s",
-                            nh_key.to_string().c_str());
-            nextHopGroupMemberBulker.remove_entry(&statuses[nh_key],
-                                                    nhgm.getId());
-        }
-    }
-
-    /* Flush the bulker to apply the changes. */
-    nextHopGroupMemberBulker.flush();
-
-    /*
-     * Iterate over the statuses map and check if the removal was successful.
-     * If it was, decrement the Crm counter and reset the member's ID.  If it
-     * wasn't, log an error message.
-     */
-    bool success = true;
-
-    for (const auto& status : statuses)
-    {
-        SWSS_LOG_DEBUG("Check member's %s status",
-                        status.first.to_string().c_str());
-
-        if (status.second == SAI_STATUS_SUCCESS)
-        {
-            SWSS_LOG_DEBUG("Member was successfully desynced");
-            m_members.at(status.first).desync();
-        }
-        else
-        {
-            SWSS_LOG_ERROR("Could not remove next hop group member %s, rv: %d",
-                            status.first.to_string().c_str(), status.second);
-            success = false;
-        }
-    }
-
-    SWSS_LOG_DEBUG("Returning %d", success);
-
-    return success;
-}
 
 /*
  * Purpose:     Update the next hop group based on a new next hop group key.
@@ -1019,7 +909,7 @@ bool NextHopGroup::desyncMembers(const std::set<NextHopKey>& nh_keys)
  * Returns:     true, if the operation was successful;
  *              false, otherwise.
  */
-bool NextHopGroup::update(const NextHopGroupKey& nhg_key)
+bool NonCbfNhg::update(const NextHopGroupKey& nhg_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Update group %s with %s",
@@ -1042,7 +932,7 @@ bool NextHopGroup::update(const NextHopGroupKey& nhg_key)
         SWSS_LOG_INFO("Updating group without preserving it's SAI ID");
 
         bool was_synced = isSynced();
-        *this = NextHopGroup(nhg_key);
+        *this = NonCbfNhg(nhg_key);
 
         /* Sync the group only if it was synced before. */
         return (was_synced ? sync() : true);
@@ -1139,7 +1029,7 @@ bool NextHopGroup::update(const NextHopGroupKey& nhg_key)
  *
  * Returns:     The attributes vector for the given next hop.
  */
-vector<sai_attribute_t> NextHopGroup::createNhgmAttrs(
+vector<sai_attribute_t> NonCbfNhg::createNhgmAttrs(
                                         const WeightedNhgMember& nhgm) const
 {
     SWSS_LOG_ENTER();
@@ -1174,7 +1064,7 @@ vector<sai_attribute_t> NextHopGroup::createNhgmAttrs(
  * Returns:     true, if the operation was successful;
  *              false, otherwise.
  */
-bool NextHopGroup::validateNextHop(const NextHopKey& nh_key)
+bool NonCbfNhg::validateNextHop(const NextHopKey& nh_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Validate NH %s in group %s",
@@ -1204,7 +1094,7 @@ bool NextHopGroup::validateNextHop(const NextHopKey& nh_key)
  * Returns:     true, if the operation was successful;
  *              false, otherwise.
  */
-bool NextHopGroup::invalidateNextHop(const NextHopKey& nh_key)
+bool NonCbfNhg::invalidateNextHop(const NextHopKey& nh_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Invalidate NH %s in group %s",

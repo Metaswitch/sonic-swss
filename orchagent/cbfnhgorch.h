@@ -50,31 +50,26 @@ private:
     uint8_t m_index;
 };
 
-class CbfNextHopGroup : public NhgCommon<string, string, CbfNhgMember>
+class CbfNhg : public NhgCommon<string, string, CbfNhgMember>
 {
 public:
     /*
      * Constructors.
      */
-    CbfNextHopGroup(const string &index,
-                    const vector<string> &members,
-                    const unordered_map<uint8_t, uint8_t> &class_map);
-    CbfNextHopGroup(CbfNextHopGroup &&cbf_nhg);
+    CbfNhg(const string &index,
+            const vector<string> &members,
+            const unordered_map<uint8_t, uint8_t> &class_map);
+    CbfNhg(CbfNhg &&cbf_nhg);
 
     /*
      * Destructor.
      */
-    ~CbfNextHopGroup() { SWSS_LOG_ENTER(); desync(); }
+    ~CbfNhg() { SWSS_LOG_ENTER(); desync(); }
 
     /*
      * Create the CBF group over SAI.
      */
     bool sync() override;
-
-    /*
-     * Remove the CBF group from SAI.
-     */
-    bool desync() override;
 
     /*
      * CBF groups can never be temporary.
@@ -115,11 +110,6 @@ private:
     bool syncMembers(const set<string> &members) override;
 
     /*
-     * Desync the given members from SAI.
-     */
-    bool desyncMembers(const set<string> &members) override;
-
-    /*
      * Get the SAI attributes for creating the members over SAI.
      */
     vector<sai_attribute_t>
@@ -137,7 +127,7 @@ private:
     bool hasSameMembers(const vector<string> &members) const;
 };
 
-class CbfNhgOrch : public NhgOrchCommon<CbfNextHopGroup>
+class CbfNhgOrch : public NhgOrchCommon<CbfNhg>
 {
 public:
     void doTask(Consumer &consumer);
@@ -145,7 +135,7 @@ public:
     /*
      * Get the non CBF NHG with the given index.
      */
-    static inline const NextHopGroup& getNonCbfNhg(const string &index);
+    static inline const NonCbfNhg& getNonCbfNhg(const string &index);
 
 private:
     static tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>

@@ -51,23 +51,23 @@ private:
 };
 
 /*
- * NextHopGroup class representing a next hop group object.
+ * NonCbfNhg class representing a next hop group object.
  */
-class NextHopGroup : public NhgCommon<NextHopGroupKey,
+class NonCbfNhg : public NhgCommon<NextHopGroupKey,
                                         NextHopKey,
                                         WeightedNhgMember>
 {
 public:
     /* Constructors. */
-    explicit NextHopGroup(const NextHopGroupKey& key);
+    explicit NonCbfNhg(const NextHopGroupKey& key);
 
-    NextHopGroup(NextHopGroup&& nhg) :
+    NonCbfNhg(NonCbfNhg&& nhg) :
         NhgCommon(move(nhg)), m_is_temp(nhg.m_is_temp)
     { SWSS_LOG_ENTER(); }
 
-    NextHopGroup& operator=(NextHopGroup&& nhg);
+    NonCbfNhg& operator=(NonCbfNhg&& nhg);
 
-    ~NextHopGroup() { SWSS_LOG_ENTER(); desync(); }
+    ~NonCbfNhg() { SWSS_LOG_ENTER(); desync(); }
 
     /* Sync the group, creating the group's and members SAI IDs. */
     bool sync() override;
@@ -106,9 +106,6 @@ private:
     /* Add group's members over the SAI API for the given keys. */
     bool syncMembers(const set<NextHopKey>& nh_keys) override;
 
-    /* Remove group's members the SAI API from the given keys. */
-    bool desyncMembers(const set<NextHopKey>& nh_keys) override;
-
     /* Create the attributes vector for a next hop group member. */
     vector<sai_attribute_t> createNhgmAttrs(
                                 const WeightedNhgMember& nhgm) const override;
@@ -118,11 +115,11 @@ private:
  * Next Hop Group Orchestrator class that handles NEXT_HOP_GROUP_TABLE
  * updates.
  */
-class NonCbfNhgOrch : public NhgOrchCommon<NextHopGroup>
+class NonCbfNhgOrch : public NhgOrchCommon<NonCbfNhg>
 {
 public:
     /* Add a temporary next hop group when resources are exhausted. */
-    NextHopGroup createTempNhg(const NextHopGroupKey& nhg_key);
+    NonCbfNhg createTempNhg(const NextHopGroupKey& nhg_key);
 
     /* Validate / Invalidate a next hop. */
     bool validateNextHop(const NextHopKey& nh_key);

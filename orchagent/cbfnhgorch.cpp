@@ -96,9 +96,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
                 }
                 else
                 {
-                    auto cbf_nhg = CbfNextHopGroup(index,
-                                                   get<1>(t),
-                                                   get<2>(t));
+                    auto cbf_nhg = CbfNhg(index, get<1>(t), get<2>(t));
                     success = cbf_nhg.sync();
 
                     if (success)
@@ -116,7 +114,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
                         }
 
                         m_syncedNhgs.emplace(index,
-                                    NhgEntry<CbfNextHopGroup>(move(cbf_nhg)));
+                                            NhgEntry<CbfNhg>(move(cbf_nhg)));
                     }
                 }
 
@@ -348,7 +346,7 @@ tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
  *
  * Returns: Reference to the non CBF NHG.
  */
-const NextHopGroup& CbfNhgOrch::getNonCbfNhg(const string &index)
+const NonCbfNhg& CbfNhgOrch::getNonCbfNhg(const string &index)
 {
     SWSS_LOG_ENTER();
     return gNhgOrch->nonCbfNhgOrch.getNhg(index);
@@ -363,10 +361,9 @@ const NextHopGroup& CbfNhgOrch::getNonCbfNhg(const string &index)
  *
  * Returns: Nothing.
  */
-CbfNextHopGroup::CbfNextHopGroup(
-                       const string &index,
-                       const vector<string> &members,
-                       const unordered_map<uint8_t, uint8_t> &class_map) :
+CbfNhg::CbfNhg(const string &index,
+                const vector<string> &members,
+                const unordered_map<uint8_t, uint8_t> &class_map) :
     NhgCommon(index),
     m_class_map(class_map)
 {
@@ -386,7 +383,7 @@ CbfNextHopGroup::CbfNextHopGroup(
  *
  * Returns: Nothing.
  */
-CbfNextHopGroup::CbfNextHopGroup(CbfNextHopGroup &&cbf_nhg) :
+CbfNhg::CbfNhg(CbfNhg &&cbf_nhg) :
     NhgCommon(move(cbf_nhg)),
     m_class_map(move(cbf_nhg.m_class_map)),
     m_temp_nhgs(move(cbf_nhg.m_temp_nhgs))
@@ -402,7 +399,7 @@ CbfNextHopGroup::CbfNextHopGroup(CbfNextHopGroup &&cbf_nhg) :
  * Returns: true, if the operation was successful,
  *          false, otherwise.
  */
-bool CbfNextHopGroup::sync()
+bool CbfNhg::sync()
 {
     SWSS_LOG_ENTER();
 
@@ -475,70 +472,6 @@ bool CbfNextHopGroup::sync()
 }
 
 /*
- * Purpose: Desync a CBF next hop group.
- *
- * Params:  None.
- *
- * Returns: true, if the desync was successful,
- *          false, otherwise.
- */
-bool CbfNextHopGroup::desync()
-{
-    SWSS_LOG_ENTER();
-
-    /*
-     * If the group is already desynced, there is nothing to be done.
-     */
-    if (!isSynced())
-    {
-        SWSS_LOG_INFO("CBF next hop group is already desynced");
-        return true;
-    }
-
-    /*
-     * Desync the group members.
-     */
-    set<string> members;
-
-    for (const auto &member : m_members)
-    {
-        members.insert(member.first);
-    }
-
-    if (!desyncMembers(members))
-    {
-        SWSS_LOG_ERROR("Failed to desync CBF next hop group %s members",
-                        m_key.c_str());
-        return false;
-    }
-
-    /*
-     * Remove the CBF NHG over SAI.
-     */
-    auto status = sai_next_hop_group_api->remove_next_hop_group(m_id);
-
-    if (status != SAI_STATUS_SUCCESS)
-    {
-        SWSS_LOG_ERROR("Failed to remove CBF next hop group %s, rv: %d",
-                        m_key.c_str(), status);
-        return false;
-    }
-
-    /*
-     * Decrease the number of programmed NHGs.
-     */
-    gCrmOrch->decCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
-    decSyncedCount();
-
-    /*
-     * Reset the group ID.
-     */
-    m_id = SAI_NULL_OBJECT_ID;
-
-    return true;
-}
-
-/*
  * Purpose: Check if the CBF NHG has the same members and in the same order as
  *          the ones given.
  *
@@ -547,7 +480,7 @@ bool CbfNextHopGroup::desync()
  * Returns: true, if the current members are the same with the given one,
  *          false, otherwise.
  */
-bool CbfNextHopGroup::hasSameMembers(const vector<string> &members) const
+bool CbfNhg::hasSameMembers(const vector<string> &members) const
 {
     SWSS_LOG_ENTER();
 
@@ -599,8 +532,8 @@ bool CbfNextHopGroup::hasSameMembers(const vector<string> &members) const
  * Returns: true, if the update was successful,
  *          false, otherwise.
  */
-bool CbfNextHopGroup::update(const vector<string> &members,
-                            const unordered_map<uint8_t, uint8_t> &class_map)
+bool CbfNhg::update(const vector<string> &members,
+                    const unordered_map<uint8_t, uint8_t> &class_map)
 {
     SWSS_LOG_ENTER();
 
@@ -769,7 +702,7 @@ bool CbfNextHopGroup::update(const vector<string> &members,
  * Returns: true, if the operation was successful,
  *          false, otherwise.
  */
-bool CbfNextHopGroup::syncMembers(const set<string> &members)
+bool CbfNhg::syncMembers(const set<string> &members)
 {
     SWSS_LOG_ENTER();
 
@@ -889,77 +822,6 @@ bool CbfNextHopGroup::syncMembers(const set<string> &members)
 }
 
 /*
- * Purpose: Desync the given CBF next hop group members.
- *
- * Params:  IN members - The members to desync.
- *
- * Returns: true, if the operation was successful,
- *          false, otherwise.
- */
-bool CbfNextHopGroup::desyncMembers(const set<string> &members)
-{
-    SWSS_LOG_ENTER();
-
-    SWSS_LOG_INFO("Desyincing members of CBF next hop group %s",
-                    m_key.c_str());
-
-    /*
-     * Desync all the given members from the group.
-     */
-    ObjectBulker<sai_next_hop_group_api_t> bulker(sai_next_hop_group_api,
-                                                    gSwitchId);
-    unordered_map<string, sai_status_t> statuses;
-
-    for (const auto &key : members)
-    {
-        SWSS_LOG_INFO("Desyncing next hop group member %s", key.c_str());
-
-        const auto &nhgm = m_members.at(key);
-
-        if (nhgm.isSynced())
-        {
-            SWSS_LOG_DEBUG("Next hop group member %s is synced", key.c_str());
-            bulker.remove_entry(&statuses[key], nhgm.getId());
-        }
-    }
-
-    /*
-     * Flush the bulker to desync the members.
-     */
-    bulker.flush();
-
-    /*
-     * Iterate over the returned statuses and check if the removal was
-     * successful.  If it was, desync the member, otherwise log an error
-     * message.
-     */
-    bool success = true;
-
-    for (const auto &status : statuses)
-    {
-        SWSS_LOG_DEBUG("Verifying CBF next hop group member %s status",
-                        status.first.c_str());
-
-        if (status.second == SAI_STATUS_SUCCESS)
-        {
-            SWSS_LOG_DEBUG("CBF next hop group member was successfully "
-                            "desynced");
-            m_members.at(status.first).desync();
-        }
-        else
-        {
-            SWSS_LOG_ERROR("Failed to desync CBF next hop group member %s, "
-                            "rv: %d", status.first.c_str(), status.second);
-            success = false;
-        }
-    }
-
-    SWSS_LOG_DEBUG("Returning %d", success);
-
-    return success;
-}
-
-/*
  * Purpose: Create a vector with the SAI attributes for syncing a next hop
  *          group member over SAI.  The caller is reponsible of filling in the
  *          index attribute.
@@ -968,8 +830,7 @@ bool CbfNextHopGroup::desyncMembers(const set<string> &members)
  *
  * Returns: The vector containing the SAI attributes.
  */
-vector<sai_attribute_t>
-            CbfNextHopGroup::createNhgmAttrs(const CbfNhgMember &nhgm) const
+vector<sai_attribute_t> CbfNhg::createNhgmAttrs(const CbfNhgMember &nhgm) const
 {
     SWSS_LOG_ENTER();
 
@@ -1017,7 +878,7 @@ vector<sai_attribute_t>
  *
  * Returns: The SAI attribute.
  */
-sai_attribute_t CbfNextHopGroup::getClassMapAttr() const
+sai_attribute_t CbfNhg::getClassMapAttr() const
 {
     SWSS_LOG_ENTER();
 
