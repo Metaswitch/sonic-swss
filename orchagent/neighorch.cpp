@@ -279,7 +279,7 @@ bool NeighOrch::setNextHopFlag(const NextHopKey &nexthop, const uint32_t nh_flag
     {
         case NHFLAGS_IFDOWN:
             rc = gRouteOrch->invalidnexthopinNextHopGroup(nexthop);
-            rc &= gNhgOrch->invalidateNextHop(nexthop);
+            rc &= gNhgOrch->nonCbfNhgOrch.invalidateNextHop(nexthop);
             break;
         default:
             assert(0);
@@ -309,7 +309,7 @@ bool NeighOrch::clearNextHopFlag(const NextHopKey &nexthop, const uint32_t nh_fl
     {
         case NHFLAGS_IFDOWN:
             rc = gRouteOrch->validnexthopinNextHopGroup(nexthop);
-            rc &= gNhgOrch->validateNextHop(nexthop);
+            rc &= gNhgOrch->nonCbfNhgOrch.validateNextHop(nexthop);
             break;
         default:
             assert(0);

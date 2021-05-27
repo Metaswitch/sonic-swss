@@ -102,6 +102,17 @@ class TestDot1p(object):
         assert port_cnt == cnt
 
     def test_cbf(self, dvs):
+        def get_qos_id():
+            nonlocal asic_db
+            nonlocal asic_qos_map_ids
+
+            dscp_map_id = None
+            for qos_id in asic_db.get_keys("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP"):
+                if qos_id not in asic_qos_map_ids:
+                    dscp_map_id = qos_id
+                    break
+            return dscp_map_id
+
         cfg_db = dvs.get_config_db()
         asic_db = dvs.get_asic_db()
 
@@ -118,34 +129,25 @@ class TestDot1p(object):
         asic_db.wait_for_n_keys("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP", asic_qos_map_count + 1)
 
         # Get the DSCP map ID
-        dscp_map_id = None
-        for qos_id in asic_db.get_keys("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP"):
-            if qos_id not in asic_qos_map_ids:
-                dscp_map_id = qos_id
-                break
+        dscp_map_id = get_qos_id()
         assert(dscp_map_id is not None)
 
         # Assert the expected values
         fvs = asic_db.get_entry("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP", dscp_map_id)
-        assert(fvs is not None)
-
-        dscp_map_value = fvs.get("SAI_QOS_MAP_ATTR_MAP_TO_VALUE_LIST")
-        assert(dscp_map_value is not None)
-
-        qos_map_type = fvs.get("SAI_QOS_MAP_ATTR_TYPE")
         assert(fvs.get("SAI_QOS_MAP_ATTR_TYPE") == "SAI_QOS_MAP_TYPE_DSCP_TO_FORWARDING_CLASS")
-
-        # Update the map to different values
-        dscp_map = [(str(i + 1), str(i + 1)) for i in range(0, 64)]
-        dscp_ps.set("AZURE", swss.FieldValuePairs(dscp_map))
-
-        asic_db.wait_for_field_negative_match("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP",
-                                                dscp_map_id,
-                                                {'SAI_QOS_MAP_ATTR_MAP_TO_VALUE_LIST': dscp_map_value})
 
         # Delete the map
         dscp_ps._del("AZURE")
         asic_db.wait_for_deleted_entry("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP", dscp_map_id)
+
+        # Create a map with invalid DSCP values
+        dscp_map = [(str(i), str(i)) for i in range(0, 65)]
+        dscp_ps.set('AZURE', swss.FieldValuePairs(dscp_map))
+        time.sleep(1)
+        assert(asic_qos_map_count == len(asic_db.get_keys('ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP')))
+
+        # Delete the map
+        dscp_ps._del("AZURE")
 
         # Delete a map that does not exist.  Nothing should happen
         dscp_ps._del("AZURE")
@@ -159,32 +161,50 @@ class TestDot1p(object):
         asic_db.wait_for_n_keys("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP", asic_qos_map_count + 1)
 
         # Get the EXP map ID
-        exp_map_id = None
-        for qos_id in asic_db.get_keys("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP"):
-            if qos_id not in asic_qos_map_ids + (dscp_map_id,):
-                exp_map_id = qos_id
-                break
-        assert(exp_map_id is not None)
+        exp_map_id = get_qos_id()
 
         # Assert the expected values
         fvs = asic_db.get_entry("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP", exp_map_id)
-        assert(fvs is not None)
-
-        exp_map_value = fvs.get("SAI_QOS_MAP_ATTR_MAP_TO_VALUE_LIST")
-        assert(exp_map_value is not None)
-
-        qos_map_type = fvs.get("SAI_QOS_MAP_ATTR_TYPE")
         assert(fvs.get("SAI_QOS_MAP_ATTR_TYPE") == "SAI_QOS_MAP_TYPE_MPLS_EXP_TO_FORWARDING_CLASS")
 
-        # Update the map to different values
-        exp_map = [(str(i + 1), str(i + 1)) for i in range(0, 8)]
-        exp_ps.set("AZURE", swss.FieldValuePairs(exp_map))
+        # Delete the map
+        exp_ps._del("AZURE")
+        asic_db.wait_for_deleted_entry("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP", exp_map_id)
 
-        asic_db.wait_for_field_negative_match("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP",
-                                                exp_map_id,
-                                                {'SAI_QOS_MAP_ATTR_MAP_TO_VALUE_LIST': exp_map_value})
+        # Create a map with invalid EXP values
+        exp_map = [(str(i), str(i)) for i in range(1, 9)]
+        exp_ps.set('AZURE', swss.FieldValuePairs(exp_map))
+        time.sleep(1)
+        assert(asic_qos_map_count == len(asic_db.get_keys('ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP')))
 
         # Delete the map
+        exp_ps._del("AZURE")
+
+        # Update the map with valid EXP values but invalid FC
+        exp_map = [(str(i), '-1') for i in range(0, 8)]
+        exp_ps.set('AZURE', swss.FieldValuePairs(exp_map))
+        time.sleep(1)
+        assert(asic_qos_map_count == len(asic_db.get_keys('ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP')))
+
+        # Delete the map
+        exp_ps._del("AZURE")
+
+        # Update the map with bigger than unsigned char FC values
+        exp_map = [(str(i), '256') for i in range(0, 8)]
+        exp_ps.set('AZURE', swss.FieldValuePairs(exp_map))
+        time.sleep(1)
+        assert(asic_qos_map_count == len(asic_db.get_keys('ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP')))
+
+        # Delete the map
+        exp_ps._del("AZURE")
+
+        # Update the map with valid values
+        exp_map = [(str(i), str(i + 10)) for i in range(0, 8)]
+        exp_ps.set('AZURE', swss.FieldValuePairs(exp_map))
+        asic_db.wait_for_n_keys('ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP', asic_qos_map_count + 1)
+
+        # Delete the map
+        exp_map_id = get_qos_id()
         exp_ps._del("AZURE")
         asic_db.wait_for_deleted_entry("ASIC_STATE:SAI_OBJECT_TYPE_QOS_MAP", exp_map_id)
 

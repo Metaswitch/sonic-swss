@@ -1,7 +1,11 @@
 #include "cbforch.h"
+#include "climits"
 
 extern sai_qos_map_api_t *sai_qos_map_api;
 extern sai_object_id_t gSwitchId;
+
+#define DSCP_MAX_VAL 63
+#define EXP_MAX_VAL 7
 
 /*
  * Purpose:     Constructor.
@@ -80,9 +84,15 @@ void MapHandler::doTask(Consumer &consumer)
                            getMapName(),
                            map_id.c_str());
 
-            auto map_list = extractMap(t);
+            auto map_list_tuple = extractMap(t);
+            success = std::get<0>(map_list_tuple);
+            auto map_list = std::get<1>(map_list_tuple);
 
-            if (map_it == end())
+            if (!success)
+            {
+                SWSS_LOG_ERROR("Failed to extract map %s", getMapName());
+            }
+            else if (map_it == end())
             {
                 SWSS_LOG_NOTICE("Creating %s map %s",
                                  getMapName(),
@@ -94,7 +104,6 @@ void MapHandler::doTask(Consumer &consumer)
                 {
                     SWSS_LOG_INFO("Successfully created %s map", getMapName());
                     emplace(map_id, sai_oid);
-                    success = true;
                 }
                 else
                 {
@@ -188,9 +197,12 @@ void MapHandler::doTask(Consumer &consumer)
  *
  * Params:      IN  t - The field-value pairs.
  *
- * Returns:     The SAI QoS map object.
+ * Returns:     Tuple, where the first value is a bool representing if the
+ *              operation was successful, while the second one contains the
+ *              map object when the first value is true, otherwise it contains
+ *              an empty object.
  */
-sai_qos_map_list_t MapHandler::extractMap(
+tuple<bool, sai_qos_map_list_t> MapHandler::extractMap(
                                    const swss::KeyOpFieldsValuesTuple &t) const
 {
     SWSS_LOG_ENTER();
@@ -200,24 +212,65 @@ sai_qos_map_list_t MapHandler::extractMap(
     map_list.count = (uint32_t)fields_values.size();
     map_list.list = new sai_qos_map_t[map_list.count]();
 
+    SWSS_LOG_DEBUG("Map count is %d", map_list.count);
+
     uint32_t ind = 0;
     for (auto i = fields_values.begin();
          i != fields_values.end();
          i++, ind++)
     {
-        if (m_type == Type::DSCP)
+        try
         {
-            map_list.list[ind].key.dscp = (uint8_t)stoi(fvField(*i));
-        }
-        else
-        {
-            map_list.list[ind].key.mpls_exp = (uint8_t)stoi(fvField(*i));
-        }
+            auto value = stoi(fvField(*i));
 
-        map_list.list[ind].value.fc = (uint8_t)stoi(fvValue(*i));
+            if (value < 0)
+            {
+                SWSS_LOG_ERROR("DSCP/EXP to FC contains negative DSCP/EXP %d "
+                                "value", value);
+                return make_tuple(false, sai_qos_map_list_t());
+            }
+
+            if (m_type == Type::DSCP)
+            {
+                if (value > DSCP_MAX_VAL)
+                {
+                    SWSS_LOG_ERROR("DSCP value %d is not valid", value);
+                    return make_tuple(false, sai_qos_map_list_t());
+                }
+
+                map_list.list[ind].key.dscp = static_cast<sai_uint8_t>(value);
+            }
+            else
+            {
+                if (value > EXP_MAX_VAL)
+                {
+                    SWSS_LOG_ERROR("EXP value %d is not valid", value);
+                    return make_tuple(false, sai_qos_map_list_t());
+                }
+
+                map_list.list[ind].key.mpls_exp = static_cast<sai_uint8_t>(
+                                                                        value);
+            }
+
+            value = stoi(fvValue(*i));
+
+            if ((value < 0) || (value > UCHAR_MAX))
+            {
+                SWSS_LOG_ERROR("FC value %d is either negative, or bigger than"
+                                " max value %d", value, UCHAR_MAX);
+                return make_tuple(false, sai_qos_map_list_t());
+            }
+
+            map_list.list[ind].value.fc = static_cast<sai_uint8_t>(value);
+        }
+        catch(const invalid_argument& e)
+        {
+            SWSS_LOG_ERROR("Got exception during conversion: %s", e.what());
+            return make_tuple(false, sai_qos_map_list_t());
+        }
     }
 
-    return map_list;
+    return make_tuple(true, map_list);
 }
 
 /*

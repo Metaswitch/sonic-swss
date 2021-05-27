@@ -2,6 +2,7 @@
 #define SWSS_CBFORCH_H
 
 #include "orch.h"
+#include "tuple"
 
 using namespace std;
 
@@ -27,7 +28,8 @@ private:
     const char* getMapName() const
                   { return m_type == Type::DSCP ? "DSCP_TO_FC" : "EXP_TO_FC"; }
 
-    sai_qos_map_list_t extractMap(const swss::KeyOpFieldsValuesTuple &t) const;
+    tuple<bool, sai_qos_map_list_t> extractMap(
+                                const swss::KeyOpFieldsValuesTuple &t) const;
     sai_object_id_t createMap(const sai_qos_map_list_t &map_list);
     bool updateMap(sai_object_id_t sai_oid,
                    const sai_qos_map_list_t &map_list);
