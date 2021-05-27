@@ -668,8 +668,8 @@ void RouteOrch::doPrefixTask(Consumer& consumer)
                 {
                     try
                     {
-                        const NextHopGroup& nh_group = gNhgOrch->getNhg(nhg_index);
-                        ctx.nhg = nh_group.getKey();
+                        const auto &nh_group = gNhgOrch->getNhg(nhg_index);
+                        ctx.nhg = nh_group.getNhgKey();
                         ctx.is_temp = nh_group.isTemp();
                     }
                     catch (const std::out_of_range& e)
@@ -742,7 +742,7 @@ void RouteOrch::doPrefixTask(Consumer& consumer)
 
                 // If already exhaust the nexthop groups, and there are pending removing routes in bulker,
                 // flush the bulker and possibly collect some released nexthop groups
-                if (gNhgOrch->getNhgCount() >= gNhgOrch->getMaxNhgCount() &&
+                if (gNhgOrch->getSyncedNhgCount() >= gNhgOrch->getMaxNhgCount() &&
                     gRouteBulker.removing_entries_count() > 0)
                 {
                     break;
@@ -1006,7 +1006,7 @@ bool RouteOrch::createFineGrainedNextHopGroup(sai_object_id_t &next_hop_group_id
 {
     SWSS_LOG_ENTER();
 
-    if (gNhgOrch->getNhgCount() >= gNhgOrch->getMaxNhgCount())
+    if (gNhgOrch->getSyncedNhgCount() >= gNhgOrch->getMaxNhgCount())
     {
         SWSS_LOG_DEBUG("Failed to create new next hop group. \
                 Reaching maximum number of next hop groups.");
@@ -1028,7 +1028,7 @@ bool RouteOrch::createFineGrainedNextHopGroup(sai_object_id_t &next_hop_group_id
     }
 
     gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
-    gNhgOrch->incNhgCount();
+    gNhgOrch->incSyncedNhgCount();
 
     return true;
 }
@@ -1050,7 +1050,7 @@ bool RouteOrch::removeFineGrainedNextHopGroup(sai_object_id_t &next_hop_group_id
     }
 
     gCrmOrch->decCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
-    gNhgOrch->decNhgCount();
+    gNhgOrch->decSyncedNhgCount();
 
     return true;
 }
@@ -1061,7 +1061,7 @@ bool RouteOrch::addNextHopGroup(const NextHopGroupKey &nexthops)
 
     assert(!hasNextHopGroup(nexthops));
 
-    if (gNhgOrch->getNhgCount() >= gNhgOrch->getMaxNhgCount())
+    if (gNhgOrch->getSyncedNhgCount() >= gNhgOrch->getMaxNhgCount())
     {
         SWSS_LOG_WARN("Reached maximum next hop groups of %u",
                         gNhgOrch->getMaxNhgCount());
@@ -1136,8 +1136,8 @@ bool RouteOrch::addNextHopGroup(const NextHopGroupKey &nexthops)
         }
     }
 
-    gNhgOrch->incNhgCount();
-    SWSS_LOG_NOTICE("Create next hop group %s", nexthops.to_string().c_str());
+    gNhgOrch->incSyncedNhgCount();
+    SWSS_LOG_INFO("Create next hop group %s", nexthops.to_string().c_str());
 
     gCrmOrch->incCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
 
@@ -1230,7 +1230,7 @@ bool RouteOrch::removeNextHopGroup(const NextHopGroupKey &nexthops)
     }
 
     next_hop_group_id = next_hop_group_entry->second.next_hop_group_id;
-    SWSS_LOG_NOTICE("Delete next hop group %s", nexthops.to_string().c_str());
+    SWSS_LOG_INFO("Delete next hop group %s", nexthops.to_string().c_str());
 
     vector<sai_object_id_t> next_hop_ids;
     auto& nhgm = next_hop_group_entry->second.nhopgroup_members;
@@ -1282,7 +1282,7 @@ bool RouteOrch::removeNextHopGroup(const NextHopGroupKey &nexthops)
         }
     }
 
-    gNhgOrch->decNhgCount();
+    gNhgOrch->decSyncedNhgCount();
     gCrmOrch->decCrmResUsedCounter(CrmResourceType::CRM_NEXTHOP_GROUP);
 
     set<NextHopKey> next_hop_set = nexthops.getNextHops();
@@ -1590,7 +1590,7 @@ bool RouteOrch::addRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextHops)
                         ctx.nhg_index.c_str());
         try
         {
-            const NextHopGroup& nhg = gNhgOrch->getNhg(ctx.nhg_index);
+            const auto &nhg = gNhgOrch->getNhg(ctx.nhg_index);
             next_hop_id = nhg.getId();
         }
         catch(const std::out_of_range& e)
@@ -1679,7 +1679,7 @@ bool RouteOrch::addRoute(RouteBulkContext& ctx, const NextHopGroupKey &nextHops)
         }
     }
 
-    SWSS_LOG_NOTICE("Added route %s with next hop(s) %s",
+    SWSS_LOG_INFO("Added route %s with next hop(s) %s",
                     ipPrefix.to_string().c_str(),
                     nextHops.to_string().c_str());
 
@@ -2496,8 +2496,8 @@ void RouteOrch::doLabelTask(Consumer& consumer)
                 {
                     try
                     {
-                        const NextHopGroup& nh_group = gNhgOrch->getNhg(nhg_index);
-                        ctx.nhg = nh_group.getKey();
+                        const auto &nh_group = gNhgOrch->getNhg(nhg_index);
+                        ctx.nhg = nh_group.getNhgKey();
                         ctx.is_temp = nh_group.isTemp();
                     }
                     catch (const std::out_of_range& e)
@@ -2552,7 +2552,7 @@ void RouteOrch::doLabelTask(Consumer& consumer)
 
                 // If already exhaust the nexthop groups, and there are pending removing routes in bulker,
                 // flush the bulker and possibly collect some released nexthop groups
-                if (gNhgOrch->getNhgCount() >= gNhgOrch->getMaxNhgCount() &&
+                if (gNhgOrch->getSyncedNhgCount() >= gNhgOrch->getMaxNhgCount() &&
                     gRouteBulker.removing_entries_count() > 0)
                 {
                     break;
@@ -2806,7 +2806,7 @@ bool RouteOrch::addLabelRoute(LabelRouteBulkContext& ctx, const NextHopGroupKey 
                         ctx.nhg_index.c_str());
         try
         {
-            const NextHopGroup& nhg = gNhgOrch->getNhg(ctx.nhg_index);
+            const auto &nhg = gNhgOrch->getNhg(ctx.nhg_index);
             next_hop_id = nhg.getId();
         }
         catch(const std::out_of_range& e)

@@ -1,242 +1,210 @@
 #pragma once
 
-#include "orch.h"
-#include "nexthopgroupkey.h"
+#include "cbfnhgorch.h"
+#include "noncbfnhgorch.h"
+#include "switchorch.h"
+#include "vector"
+#include "portsorch.h"
 
-class NextHopGroupMember
-{
-public:
-    NextHopGroupMember(const std::pair<NextHopKey, uint8_t>& nhgm) :
-        m_nh_key(nhgm.first),
-        m_gm_id(SAI_NULL_OBJECT_ID) {}
+using namespace std;
 
-    /* Constructors / Assignment operators. */
-    NextHopGroupMember(const NextHopKey& nh_key) :
-        m_nh_key(nh_key),
-        m_gm_id(SAI_NULL_OBJECT_ID) {}
+/* Default maximum number of next hop groups */
+#define DEFAULT_NUMBER_OF_ECMP_GROUPS   128
+#define DEFAULT_MAX_ECMP_GROUP_SIZE     32
 
-    NextHopGroupMember(NextHopGroupMember&& nhgm) :
-        m_nh_key(std::move(nhgm.m_nh_key)),
-        m_gm_id(nhgm.m_gm_id)
-    { nhgm.m_gm_id = SAI_NULL_OBJECT_ID; }
+extern sai_object_id_t gSwitchId;
 
-    NextHopGroupMember& operator=(NextHopGroupMember&& nhgm);
+extern SwitchOrch *gSwitchOrch;
+extern PortsOrch *gPortsOrch;
 
-    /*
-     * Prevent object copying so we don't end up having multiple objects
-     * referencing the same SAI objects.
-     */
-    NextHopGroupMember(const NextHopGroupMember&) = delete;
-    void operator=(const NextHopGroupMember&) = delete;
+extern sai_switch_api_t *sai_switch_api;
 
-    /* Destructor. */
-    virtual ~NextHopGroupMember();
-
-    /* Sync / Desync. */
-    void sync(sai_object_id_t gm_id);
-    void desync();
-
-    /* Getters / Setters. */
-    inline const NextHopKey& getNhKey() const { return m_nh_key; }
-    sai_object_id_t getNhId() const;
-    inline sai_object_id_t getGmId() const { return m_gm_id; }
-    inline bool isSynced() const { return m_gm_id != SAI_NULL_OBJECT_ID; }
-
-    /* Check if the next hop is labeled. */
-    inline bool isLabeled() const { return !m_nh_key.label_stack.empty(); }
-
-    /* Convert member's details to string. */
-    std::string to_string() const
-    {
-        return m_nh_key.to_string() +
-                ", SAI ID: " + std::to_string(m_gm_id);
-    }
-
-private:
-    /* The key of the next hop of this member. */
-    NextHopKey m_nh_key;
-
-    /* The group member SAI ID for this member. */
-    sai_object_id_t m_gm_id;
-};
-
-/* Map indexed by NextHopKey, containing the SAI ID of the group member. */
-typedef std::map<NextHopKey, NextHopGroupMember> NhgMembers;
-
-/*
- * NextHopGroup class representing a next hop group object.
- */
-class NextHopGroup
-{
-public:
-    /* Constructors. */
-    explicit NextHopGroup(const NextHopGroupKey& key);
-    NextHopGroup(NextHopGroup&& nhg);
-    NextHopGroup& operator=(NextHopGroup&& nhg);
-
-    /* Destructor. */
-    virtual ~NextHopGroup() { desync(); }
-
-    /* Sync the group, creating the group's and members SAI IDs. */
-    bool sync();
-
-    /* Desync the group, reseting the group's and members SAI IDs.  */
-    bool desync();
-
-    /*
-     * Update the group based on a new next hop group key.  This will also
-     * perform any sync / desync necessary.
-     */
-    bool update(const NextHopGroupKey& nhg_key);
-
-    /* Check if the group contains the given next hop. */
-    inline bool hasNextHop(const NextHopKey& nh_key) const {
-                            return m_members.find(nh_key) != m_members.end(); }
-
-    /* Validate a next hop in the group, syncing it. */
-    bool validateNextHop(const NextHopKey& nh_key);
-
-    /* Invalidate a next hop in the group, desyncing it. */
-    bool invalidateNextHop(const NextHopKey& nh_key);
-
-    /* Increment the number of existing groups. */
-    static inline void incCount() { ++m_count; }
-
-    /* Decrement the number of existing groups. */
-    static inline void decCount() { assert(m_count > 0); --m_count; }
-
-    /* Getters / Setters. */
-    inline const NextHopGroupKey& getKey() const { return m_key; }
-    inline sai_object_id_t getId() const { return m_id; }
-    static inline unsigned int getCount() { return m_count; }
-    inline bool isTemp() const { return m_is_temp; }
-    inline void setTemp(bool is_temp) { m_is_temp = is_temp; }
-    inline bool isSynced() const { return m_id != SAI_NULL_OBJECT_ID; }
-    inline size_t getSize() const { return m_members.size(); }
-
-    /* Convert NHG's details to a string. */
-    std::string to_string() const
-    {
-        return m_key.to_string() + ", SAI ID: " + std::to_string(m_id);
-    }
-
-private:
-
-    /* The next hop group key of this group. */
-    NextHopGroupKey m_key;
-
-    /* The SAI ID of the group. */
-    sai_object_id_t m_id;
-
-    /* Members of this next hop group. */
-    NhgMembers m_members;
-
-    /* Whether the group is temporary or not. */
-    bool m_is_temp;
-
-    /*
-     * Number of existing groups.  Incremented when an object is created and
-     * decremented when an object is destroyed.  This will also account for the
-     * groups created by RouteOrch.
-     */
-    static unsigned int m_count;
-
-    /* Add group's members over the SAI API for the given keys. */
-    bool syncMembers(const std::set<NextHopKey>& nh_keys);
-
-    /* Remove group's members the SAI API from the given keys. */
-    bool desyncMembers(const std::set<NextHopKey>& nh_keys);
-
-    /* Create the attributes vector for a next hop group member. */
-    vector<sai_attribute_t> createNhgmAttrs(
-                                        const NextHopGroupMember& nhgm) const;
-};
-
-/*
- * Structure describing a next hop group which NhgOrch owns.  Beside having a
- * unique pointer to that next hop group, we also want to keep a ref count so
- * NhgOrch knows how many other objects reference the next hop group in order
- * not to delete them while still being referenced.
- */
-struct NhgEntry
-{
-    /* Pointer to the next hop group.  NhgOrch is the sole owner of it. */
-    std::unique_ptr<NextHopGroup> nhg;
-
-    /* Number of external objects referencing this next hop group. */
-    unsigned int ref_count;
-
-    NhgEntry() = default;
-    explicit NhgEntry(std::unique_ptr<NextHopGroup>&& _nhg,
-                      unsigned int _ref_count = 0) :
-        nhg(std::move(_nhg)), ref_count(_ref_count) {}
-};
-
-/*
- * Map indexed by next hop group's CP ID, containing the next hop group for
- * that ID and the number of objects referencing it.
- */
-typedef std::unordered_map<std::string, NhgEntry> NhgTable;
-
-/*
- * Next Hop Group Orchestrator class that handles NEXT_HOP_GROUP_TABLE
- * updates.
- */
 class NhgOrch : public Orch
 {
 public:
-    /*
-     * Constructor.
-     */
-    NhgOrch(DBConnector *db, string tableName);
-
-    /* Check if the next hop group given by it's index exists. */
-    inline bool hasNhg(const std::string& index) const
-        { return m_syncdNextHopGroups.find(index) !=
-                                                m_syncdNextHopGroups.end(); }
-
-    /*
-     * Get the next hop group given by it's index.  If the index does not exist
-     * in map, a std::out_of_range exception will be thrown.
-     */
-    inline const NextHopGroup& getNhg(const std::string& index) const
-                        { return *m_syncdNextHopGroups.at(index).nhg; }
-
-    /* Add a temporary next hop group when resources are exhausted. */
-    NextHopGroup createTempNhg(const NextHopGroupKey& nhg_key);
-
-    /* Getters / Setters. */
-    inline unsigned int getMaxNhgCount() const { return m_maxNhgCount; }
-    static inline unsigned int getNhgCount()
-                                        { return NextHopGroup::getCount(); }
-
-    /* Validate / Invalidate a next hop. */
-    bool validateNextHop(const NextHopKey& nh_key);
-    bool invalidateNextHop(const NextHopKey& nh_key);
-
-    /* Increase / Decrease the number of next hop groups. */
-    inline void incNhgCount()
+    NhgOrch(DBConnector *db, const vector<string> &table_names) :
+        Orch(db, table_names)
     {
-        assert(NextHopGroup::getCount() < m_maxNhgCount);
-        NextHopGroup::incCount();
+        SWSS_LOG_ENTER();
+
+        /* Get the switch's maximum next hop group capacity. */
+        sai_attribute_t attr;
+        attr.id = SAI_SWITCH_ATTR_NUMBER_OF_ECMP_GROUPS;
+
+        sai_status_t status = sai_switch_api->get_switch_attribute(gSwitchId,
+                                                                1,
+                                                                &attr);
+
+        if (status != SAI_STATUS_SUCCESS)
+        {
+            SWSS_LOG_WARN("Failed to get switch attribute number of ECMP "
+                            "groups. Use default value. rv:%d", status);
+            m_maxNhgCount = DEFAULT_NUMBER_OF_ECMP_GROUPS;
+        }
+        else
+        {
+            m_maxNhgCount = attr.value.s32;
+
+            /*
+            * ASIC specific workaround to re-calculate maximum ECMP groups
+            * according to diferent ECMP mode used.
+            *
+            * On Mellanox platform, the maximum ECMP groups returned is the value
+            * under the condition that the ECMP group size is 1. Deviding this
+            * number by DEFAULT_MAX_ECMP_GROUP_SIZE gets the maximum number of
+            * ECMP groups when the maximum ECMP group size is 32.
+            */
+            char *platform = getenv("platform");
+            if (platform && strstr(platform, MLNX_PLATFORM_SUBSTRING))
+            {
+                SWSS_LOG_NOTICE("Mellanox platform - divide capacity by %d",
+                                DEFAULT_MAX_ECMP_GROUP_SIZE);
+                m_maxNhgCount /= DEFAULT_MAX_ECMP_GROUP_SIZE;
+            }
+        }
+
+        /* Set switch's next hop group capacity. */
+        std::vector<swss::FieldValueTuple> fvTuple;
+        fvTuple.emplace_back("MAX_NEXTHOP_GROUP_COUNT",
+                                std::to_string(m_maxNhgCount));
+        gSwitchOrch->set_switch_capability(fvTuple);
+
+        SWSS_LOG_NOTICE("Maximum number of ECMP groups supported is %d",
+                        m_maxNhgCount);
     }
-    inline void decNhgCount() { NextHopGroup::decCount(); }
 
-    /* Increase / Decrease ref count for a NHG given by it's index. */
-    void incNhgRefCount(const std::string& index);
-    void decNhgRefCount(const std::string& index);
+    /*
+     * Get the maximum number of ECMP groups allowed by the switch.
+     */
+    static inline unsigned getMaxNhgCount()
+                                    { SWSS_LOG_ENTER(); return m_maxNhgCount; }
 
+    /*
+     * Get the number of next hop groups that are synced.
+     */
+    static inline unsigned getSyncedNhgCount()
+                        { SWSS_LOG_ENTER(); return NhgBase::getSyncedCount(); }
+
+    /* Increase the number of synced next hop groups. */
+    static void incSyncedNhgCount()
+    {
+        SWSS_LOG_ENTER();
+
+        if (getSyncedNhgCount() >= m_maxNhgCount)
+        {
+            SWSS_LOG_ERROR("Incresing synced next hop group count beyond "
+                            "switch's capabilities");
+            throw logic_error("Next hop groups exceed switch's "
+                                    "capabilities");
+        }
+
+        NhgBase::incSyncedCount();
+    }
+
+    /* Decrease the number of next hop groups. */
+    static inline void decSyncedNhgCount()
+                            { SWSS_LOG_ENTER(); NhgBase::decSyncedCount(); }
+
+    /*
+     * Check if the next hop group with the given index exists.
+     */
+    inline bool hasNhg(const string &index) const
+    {
+        SWSS_LOG_ENTER();
+        return nonCbfNhgOrch.hasNhg(index) || cbfNhgOrch.hasNhg(index);
+    }
+
+    /*
+     * Get the next hop group with the given index.
+     */
+    const NhgBase& getNhg(const string &index) const
+    {
+        SWSS_LOG_ENTER();
+
+        try
+        {
+            return nonCbfNhgOrch.getNhg(index);
+        }
+        catch(const std::out_of_range &e)
+        {
+            return cbfNhgOrch.getNhg(index);
+        }
+    }
+
+    /*
+     * Increase the reference counter for the next hop group with the given
+     * index.
+     */
+    void incNhgRefCount(const string &index)
+    {
+        SWSS_LOG_ENTER();
+
+        if (nonCbfNhgOrch.hasNhg(index))
+        {
+            nonCbfNhgOrch.incNhgRefCount(index);
+        }
+        else if (cbfNhgOrch.hasNhg(index))
+        {
+            cbfNhgOrch.incNhgRefCount(index);
+        }
+        else
+        {
+            throw std::out_of_range("Next hop group index not found.");
+        }
+    }
+
+    /*
+     * Decrease the reference counter for the next hop group with the given
+     * index.
+     */
+    void decNhgRefCount(const string &index)
+    {
+        SWSS_LOG_ENTER();
+
+        if (nonCbfNhgOrch.hasNhg(index))
+        {
+            nonCbfNhgOrch.decNhgRefCount(index);
+        }
+        else if (cbfNhgOrch.hasNhg(index))
+        {
+            cbfNhgOrch.decNhgRefCount(index);
+        }
+        else
+        {
+            throw std::out_of_range("Next hop group index not found.");
+        }
+    }
+
+    void doTask(Consumer &consumer) override
+    {
+        SWSS_LOG_ENTER();
+
+        if (!gPortsOrch->allPortsReady())
+        {
+            return;
+        }
+
+        string table_name = consumer.getTableName();
+
+        if (table_name == APP_NEXT_HOP_GROUP_TABLE_NAME)
+        {
+            nonCbfNhgOrch.doTask(consumer);
+        }
+        else if (table_name == APP_CLASS_BASED_NEXT_HOP_GROUP_TABLE_NAME)
+        {
+            cbfNhgOrch.doTask(consumer);
+        }
+    }
+
+    /*
+     * Orchs dealing with the (non) CBF operations.
+     */
+    NonCbfNhgOrch nonCbfNhgOrch;
+    CbfNhgOrch cbfNhgOrch;
 private:
 
     /*
      * Switch's maximum number of next hop groups capacity.
      */
-    unsigned int m_maxNhgCount;
-
-    /*
-     * The next hop group table.
-     */
-    NhgTable m_syncdNextHopGroups;
-
-    void doTask(Consumer& consumer);
+    static unsigned m_maxNhgCount;
 };

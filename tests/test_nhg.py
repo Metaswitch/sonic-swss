@@ -6,7 +6,7 @@ import json
 import pytest
 import ipaddress
 
-from swsscommon import swsscommon
+from swsscommon import swsscommon as swss
 
 
 class TestNextHopGroup(object):
@@ -37,9 +37,9 @@ class TestNextHopGroup(object):
         asic_db = dvs.get_asic_db()
         asic_rts_count = len(asic_db.get_keys(self.ASIC_RT_STR))
 
-        fvs = swsscommon.FieldValuePairs([('nexthop_group', nhg_index)])
+        fvs = swss.FieldValuePairs([('nexthop_group', nhg_index)])
         prefix = '255.255.255.255/24'
-        ps = swsscommon.ProducerStateTable(dvs.get_app_db().db_connection,
+        ps = swss.ProducerStateTable(dvs.get_app_db().db_connection,
                                             "ROUTE_TABLE")
         ps.set(prefix, fvs)
 
@@ -63,8 +63,11 @@ class TestNextHopGroup(object):
         # Return the NHGID
         return nhgid
 
-    def get_nhgm_ids(self, nhg_index, dvs):
-        nhgid = self.get_nhg_id(nhg_index, dvs)
+    def get_nhgm_ids(self, nhg_index, dvs, nh_id=None):
+        if nh_id is None:
+            nhgid = self.get_nhg_id(nhg_index, dvs)
+        else:
+            nhgid = nh_id
         nhgms = []
         asic_db = dvs.get_asic_db()
 
@@ -123,7 +126,7 @@ class TestNextHopGroup(object):
         rtprefix = "2.2.2.0/24"
 
         app_db = dvs.get_app_db()
-        ps = swsscommon.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
+        ps = swss.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
 
         asic_db = dvs.get_asic_db()
 
@@ -184,13 +187,13 @@ class TestNextHopGroup(object):
             self.config_intf(i, dvs)
 
         app_db = dvs.get_app_db()
-        lr_ps = swsscommon.ProducerStateTable(app_db.db_connection, "LABEL_ROUTE_TABLE")
+        lr_ps = swss.ProducerStateTable(app_db.db_connection, "LABEL_ROUTE_TABLE")
 
         asic_db = dvs.get_asic_db()
         asic_insegs_count = len(asic_db.get_keys(self.ASIC_INSEG_STR))
 
         # add label route
-        fvs = swsscommon.FieldValuePairs([("nexthop","10.0.0.1,10.0.0.3,10.0.0.5"),
+        fvs = swss.FieldValuePairs([("nexthop","10.0.0.1,10.0.0.3,10.0.0.5"),
                                             ("ifname", "Ethernet0,Ethernet4,Ethernet8")])
         lr_ps.set("10", fvs)
 
@@ -252,13 +255,13 @@ class TestNextHopGroup(object):
 
         app_db = dvs.get_app_db()
         asic_db = dvs.get_asic_db()
-        nhg_ps = swsscommon.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
+        nhg_ps = swss.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
         asic_nhgs_count = len(asic_db.get_keys(self.ASIC_NHG_STR))
         asic_nhgms_count = len(asic_db.get_keys(self.ASIC_NHGM_STR))
         asic_nhs_count = len(asic_db.get_keys(self.ASIC_NHS_STR))
 
         # Add a group containing labeled weighted NHs
-        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
                                             ('ifname', 'Ethernet0,Ethernet4'),
                                             ('weight', '2,4')])
         nhg_ps.set('group1', fvs)
@@ -269,7 +272,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHS_STR, asic_nhs_count + 2)
 
         # Create a new single next hop with the same label
-        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+1+10.0.0.1'),
+        fvs = swss.FieldValuePairs([('nexthop', 'push+1+10.0.0.1'),
                                             ('ifname', 'Ethernet0')])
         nhg_ps.set('group2', fvs)
 
@@ -278,7 +281,7 @@ class TestNextHopGroup(object):
         assert len(asic_db.get_keys(self.ASIC_NHS_STR)) == asic_nhs_count + 2
 
         # Create a new single next hop with a different label
-        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+2+10.0.0.1'),
+        fvs = swss.FieldValuePairs([('nexthop', 'push+2+10.0.0.1'),
                                             ('ifname', 'Ethernet0')])
         nhg_ps.set('group3', fvs)
 
@@ -315,8 +318,8 @@ class TestNextHopGroup(object):
 
         app_db = dvs.get_app_db()
         asic_db = dvs.get_asic_db()
-        nhg_ps = swsscommon.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
-        rt_ps = swsscommon.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
+        nhg_ps = swss.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
+        rt_ps = swss.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
 
         def get_nhg_keys():
             return asic_db.get_keys(self.ASIC_NHG_STR)
@@ -339,7 +342,7 @@ class TestNextHopGroup(object):
         assert len(get_nhg_keys()) == asic_nhgs_count
 
         # Create a next hop group with a member that does not exist - should fail
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3,10.0.0.63'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3,10.0.0.63'),
                                         ("ifname", "Ethernet0,Ethernet4,Ethernet124")])
         nhg_ps.set("group1", fvs)
         time.sleep(1)
@@ -348,7 +351,7 @@ class TestNextHopGroup(object):
         # Issue an update for this next hop group that doesn't yet exist,
         # which contains only valid NHs.  This will overwrite the previous
         # operation and create the group.
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.5'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.5'),
                                         ("ifname", "Ethernet0,Ethernet8")])
         nhg_ps.set("group1", fvs)
         asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 1)
@@ -368,7 +371,7 @@ class TestNextHopGroup(object):
 
         # Add a route referencing the new group
         asic_rts_count = len(get_rt_keys())
-        fvs = swsscommon.FieldValuePairs([('nexthop_group', 'group1')])
+        fvs = swss.FieldValuePairs([('nexthop_group', 'group1')])
         rt_ps.set('2.2.2.0/24', fvs)
         asic_db.wait_for_n_keys(self.ASIC_RT_STR, asic_rts_count + 1)
 
@@ -385,14 +388,14 @@ class TestNextHopGroup(object):
         assert len(get_nhg_keys()) == asic_nhgs_count + 1
 
         # Create a new group
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
                                           ('ifname', 'Ethernet0,Ethernet4')])
         nhg_ps.set("group2", fvs)
         asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
         asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 4)
 
         # Update the route to point to the new group
-        fvs = swsscommon.FieldValuePairs([('nexthop_group', 'group2')])
+        fvs = swss.FieldValuePairs([('nexthop_group', 'group2')])
         rt_ps.set('2.2.2.0/24', fvs)
 
         # The first group should have got deleted
@@ -403,7 +406,7 @@ class TestNextHopGroup(object):
 
         # Update the route with routeOrch's owned next hop group
         nhgid = asic_db.get_entry(self.ASIC_RT_STR, rt_key)['SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID']
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
                                           ('ifname', 'Ethernet0,Ethernet4')])
         rt_ps.set('2.2.2.0/24', fvs)
 
@@ -416,7 +419,7 @@ class TestNextHopGroup(object):
         nhgid = asic_db.get_entry(self.ASIC_RT_STR, rt_key)['SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID']
 
         # Update the route to point back to group2
-        fvs = swsscommon.FieldValuePairs([('nexthop_group', 'group2')])
+        fvs = swss.FieldValuePairs([('nexthop_group', 'group2')])
         rt_ps.set('2.2.2.0/24', fvs)
 
         # The routeOrch's owned next hop group should get deleted
@@ -428,23 +431,38 @@ class TestNextHopGroup(object):
 
         # Create a new group with the same members as group2
         nhgid = asic_db.get_entry(self.ASIC_RT_STR, rt_key)['SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID']
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
                                           ('ifname', 'Ethernet0,Ethernet4')])
         nhg_ps.set("group1", fvs)
         asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
         asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 4)
 
         # Update the route to point to the new group
-        fvs = swsscommon.FieldValuePairs([('nexthop_group', 'group1')])
+        fvs = swss.FieldValuePairs([('nexthop_group', 'group1')])
         rt_ps.set('2.2.2.0/24', fvs)
         time.sleep(1)
 
         # Assert the next hop group ID changed
         assert asic_db.get_entry(self.ASIC_RT_STR, rt_key)['SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID'] != nhgid
 
+        # Delete group1 while being referenced
+        nhg_ps._del('group1')
+        time.sleep(1)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
+
+        # Update group1
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.3,10.0.0.5'),
+                                          ('ifname', 'Ethernet4,Ethernet8')])
+        nhg_ps.set("group1", fvs)
+        time.sleep(1)
+
         # Remove the route
         rt_ps._del('2.2.2.0/24')
         asic_db.wait_for_n_keys(self.ASIC_RT_STR, asic_rts_count)
+
+        # The group1 update should have overwritten the delete
+        time.sleep(1)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
 
         # Remove the groups
         nhg_ps._del('group1')
@@ -454,7 +472,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count)
 
         # Create a route with labeled NHs
-        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
                                             ('ifname', 'Ethernet0,Ethernet4'),
                                             ('weight', '2,4')])
         rt_ps.set('2.2.2.0/24', fvs)
@@ -471,7 +489,7 @@ class TestNextHopGroup(object):
         assert len(asic_db.get_keys(self.ASIC_NHS_STR)) == asic_nhs_count + 2
 
         # Update the group with a different NH
-        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+2+10.0.0.1,push+3+10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', 'push+2+10.0.0.1,push+3+10.0.0.3'),
                                             ('ifname', 'Ethernet0,Ethernet4'),
                                             ('weight', '2,4')])
         nhg_ps.set('group1', fvs)
@@ -493,7 +511,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHS_STR, asic_nhs_count)
 
         # Add a route with a NHG that does not exist
-        fvs = swsscommon.FieldValuePairs([('nexthop_group', 'group1')])
+        fvs = swss.FieldValuePairs([('nexthop_group', 'group1')])
         rt_ps.set('2.2.2.0/24', fvs)
         time.sleep(1)
         assert asic_rts_count == len(asic_db.get_keys(self.ASIC_RT_STR))
@@ -535,7 +553,7 @@ class TestNextHopGroup(object):
 
             nexthop = ','.join(nexthop)
             ifname = ','.join(ifname)
-            fvs = swsscommon.FieldValuePairs([("nexthop", nexthop), ("ifname", ifname)])
+            fvs = swss.FieldValuePairs([("nexthop", nexthop), ("ifname", ifname)])
             return fvs
 
         def asic_route_nhg_fvs(k):
@@ -563,7 +581,7 @@ class TestNextHopGroup(object):
 
         app_db = dvs.get_app_db()
         asic_db = dvs.get_asic_db()
-        ps = swsscommon.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
+        ps = swss.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
 
         # Add first batch of routes with unique nexthop groups in AppDB
         route_count = 0
@@ -589,9 +607,10 @@ class TestNextHopGroup(object):
         asic_routes_count += MAX_ECMP_COUNT
 
         # Add a route with labeled NHs
+        time.sleep(1)
         asic_nhs_count = len(asic_db.get_keys(self.ASIC_NHS_STR))
         route_ipprefix = gen_ipprefix(route_count)
-        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
                                             ('ifname', 'Ethernet0,Ethernet4')])
         ps.set(route_ipprefix, fvs)
         route_count += 1
@@ -687,8 +706,8 @@ class TestNextHopGroup(object):
     def test_nhgorch_nhg_exhaust(self, dvs, testlog):
         app_db = dvs.get_app_db()
         asic_db = dvs.get_asic_db()
-        nhg_ps = swsscommon.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
-        rt_ps = swsscommon.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
+        nhg_ps = swss.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
+        rt_ps = swss.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
 
         MAX_ECMP_COUNT = 512
         MAX_PORT_COUNT = 10
@@ -710,7 +729,7 @@ class TestNextHopGroup(object):
 
             nexthop = ','.join(nexthop)
             ifname = ','.join(ifname)
-            fvs = swsscommon.FieldValuePairs([("nexthop", nexthop), ("ifname", ifname)])
+            fvs = swss.FieldValuePairs([("nexthop", nexthop), ("ifname", ifname)])
 
             return fvs
 
@@ -775,7 +794,7 @@ class TestNextHopGroup(object):
             nhg_ps.set(nhg_index, nhg_fvs)
 
             # Wait for the group to be added
-            asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + nhg_count + 1)
+            asic_db.wait_for_n_keys(self.ASIC_NHG_STR, nhg_count + 1)
 
             # Save the NHG index/ID pair
             asic_nhgs[nhg_index] = self.get_nhg_id(nhg_index, dvs)
@@ -869,7 +888,7 @@ class TestNextHopGroup(object):
         # Add a route
         asic_rts_count = len(asic_db.get_keys(self.ASIC_RT_STR))
 
-        rt_fvs = swsscommon.FieldValuePairs([('nexthop_group', nhg_index)])
+        rt_fvs = swss.FieldValuePairs([('nexthop_group', nhg_index)])
         rt_ps.set('2.2.2.0/24', rt_fvs)
 
         # Assert the route is created
@@ -886,7 +905,7 @@ class TestNextHopGroup(object):
         assert rt_id != None
 
         # Update the route to point to the temporary NHG
-        rt_fvs = swsscommon.FieldValuePairs([('nexthop_group', nhg_index)])
+        rt_fvs = swss.FieldValuePairs([('nexthop_group', nhg_index)])
         rt_ps.set('2.2.2.0/24', rt_fvs)
 
         # Wait for the route to change it's NHG ID
@@ -944,7 +963,7 @@ class TestNextHopGroup(object):
         # Try updating the promoted NHG to a single NHG.  Should fail as it no
         # longer is a temporary NHG
         nhg_id = self.get_nhg_id(nhg_index, dvs)
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1'),
                                             ('ifname', 'Ethernet0')])
         nhg_ps.set(nhg_index, fvs)
         time.sleep(1)
@@ -955,12 +974,15 @@ class TestNextHopGroup(object):
         prev_nhg_id = nhg_id
 
         # Create a temporary next hop groups
+        dvs.runcmd('swssloglevel -c orchagent -l INFO')
         nhg_index, binary = create_temp_nhg()
-        nhg_id = self.get_nhg_id(nhg_index, dvs)
 
         # Update the route to point to the temporary group
-        fvs = swsscommon.FieldValuePairs([('nexthop_group', nhg_index)])
+        fvs = swss.FieldValuePairs([('nexthop_group', nhg_index)])
         rt_ps.set('2.2.2.0/24', fvs)
+        asic_db.wait_for_deleted_entry(self.ASIC_NHG_STR, prev_nhg_id)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, MAX_ECMP_COUNT)
+        nhg_id = self.get_nhg_id(nhg_index, dvs)
         asic_db.wait_for_field_match(self.ASIC_RT_STR,
                                         rt_id,
                                         {'SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID': nhg_id})
@@ -976,14 +998,14 @@ class TestNextHopGroup(object):
         nhg_id = self.get_nhg_id(nhg_index, dvs)
 
         # Update the route to point to the temporary group
-        fvs = swsscommon.FieldValuePairs([('nexthop_group', nhg_index)])
+        fvs = swss.FieldValuePairs([('nexthop_group', nhg_index)])
         rt_ps.set('2.2.2.0/24', fvs)
         asic_db.wait_for_field_match(self.ASIC_RT_STR,
                                         rt_id,
                                         {'SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID': nhg_id})
 
         # Update the group to a single NHG
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1'),
                                             ('ifname', 'Ethernet0')])
         nhg_ps.set(nhg_index, fvs)
         nhg_id = self.get_nhg_id(nhg_index, dvs)
@@ -994,7 +1016,7 @@ class TestNextHopGroup(object):
                                         {'SAI_ROUTE_ENTRY_ATTR_NEXT_HOP_ID': nhg_id})
 
         # Try to update the nexthop group to another one
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.3'),
                                             ('ifname', 'Ethernet4')])
         nhg_ps.set(nhg_index, fvs)
 
@@ -1010,7 +1032,7 @@ class TestNextHopGroup(object):
         # Create a next hop group that contains labeled NHs that do not exist
         # in NeighOrch
         asic_nhs_count = len(asic_db.get_keys(self.ASIC_NHS_STR))
-        fvs = swsscommon.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', 'push+1+10.0.0.1,push+3+10.0.0.3'),
                                             ('ifname', 'Ethernet0,Ethernet4')])
         nhg_index = gen_nhg_index(nhg_count)
         nhg_ps.set(nhg_index, fvs)
@@ -1061,7 +1083,7 @@ class TestNextHopGroup(object):
         asic_nhgs[nhg_index] = self.get_nhg_id(nhg_index, dvs)
 
         # Create a temporary NHG that contains only NHs that do not exist
-        nhg_fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.21,10.0.0.23'),
+        nhg_fvs = swss.FieldValuePairs([('nexthop', '10.0.0.21,10.0.0.23'),
                                                 ('ifname', 'Ethernet40,Ethernet44')])
         nhg_index = gen_nhg_index(nhg_count)
         nhg_count += 1
@@ -1080,7 +1102,7 @@ class TestNextHopGroup(object):
         assert nhg_id is not None
 
         # Update the temporary NHG to an invalid one again
-        nhg_fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.21,10.0.0.23'),
+        nhg_fvs = swss.FieldValuePairs([('nexthop', '10.0.0.21,10.0.0.23'),
                                                 ('ifname', 'Ethernet40,Ethernet44')])
         nhg_ps.set(nhg_index, nhg_fvs)
 
@@ -1111,13 +1133,13 @@ class TestNextHopGroup(object):
 
         # create next hop group in APPL DB
 
-        nhg_ps = swsscommon.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
+        nhg_ps = swss.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
 
         prev_nhg_keys = asic_db.get_keys(self.ASIC_NHG_STR)
         asic_nhgs_count = len(prev_nhg_keys)
         asic_nhgms_count = len(asic_db.get_keys(self.ASIC_NHGM_STR))
 
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3,10.0.0.5'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3,10.0.0.5'),
                                         ("ifname", "Ethernet0,Ethernet4,Ethernet8")])
         nhg_ps.set("group1", fvs)
 
@@ -1151,11 +1173,11 @@ class TestNextHopGroup(object):
 
         # create route in APPL DB
 
-        rt_ps = swsscommon.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
+        rt_ps = swss.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
 
         asic_routes_count = len(asic_db.get_keys(self.ASIC_RT_STR))
 
-        fvs = swsscommon.FieldValuePairs([("nexthop_group", "group1")])
+        fvs = swss.FieldValuePairs([("nexthop_group", "group1")])
         rt_ps.set("2.2.2.0/24", fvs)
 
         # check if route was propagated to ASIC DB
@@ -1201,7 +1223,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, 2)
 
         # Create a group that contains a NH that uses the down link
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
                                         ("ifname", "Ethernet0,Ethernet4")])
         nhg_ps.set('group2', fvs)
 
@@ -1211,7 +1233,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 3)
 
         # Update the NHG with one interface down
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.3,10.0.0.1'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.3,10.0.0.1'),
                                         ("ifname", "Ethernet4,Ethernet0")])
         nhg_ps.set("group1", fvs)
 
@@ -1231,7 +1253,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 2)
 
         # Create group2 with a NH that does not exist
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.3,10.0.0.63'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.3,10.0.0.63'),
                                         ("ifname", "Ethernet4,Ethernet124")])
         nhg_ps.set("group2", fvs)
 
@@ -1240,7 +1262,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 1)
 
         # Update group1 with a NH that does not exist
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.3,10.0.0.63'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.3,10.0.0.63'),
                                         ("ifname", "Ethernet4,Ethernet124")])
         nhg_ps.set("group1", fvs)
 
@@ -1263,7 +1285,7 @@ class TestNextHopGroup(object):
         asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 1)
 
         # Update the NHG, adding two new members
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3,10.0.0.5,10.0.0.7'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3,10.0.0.5,10.0.0.7'),
                                         ("ifname", "Ethernet0,Ethernet4,Ethernet8,Ethernet12")])
         nhg_ps.set("group1", fvs)
 
@@ -1272,7 +1294,7 @@ class TestNextHopGroup(object):
 
         # Update the group to one NH only - orchagent should fail as it is
         # referenced
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1'), ("ifname", "Ethernet0")])
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1'), ("ifname", "Ethernet0")])
         nhg_ps.set("group1", fvs)
         time.sleep(1)
 
@@ -1305,8 +1327,8 @@ class TestNextHopGroup(object):
         asic_nhgms_count = len(asic_db.get_keys(self.ASIC_NHGM_STR))
 
         # Create single next hop group in APPL DB
-        nhg_ps = swsscommon.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1'), ("ifname", "Ethernet0")])
+        nhg_ps = swss.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1'), ("ifname", "Ethernet0")])
         nhg_ps.set("group1", fvs)
         time.sleep(1)
 
@@ -1325,11 +1347,11 @@ class TestNextHopGroup(object):
 
         # create route in APPL DB
 
-        rt_ps = swsscommon.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
+        rt_ps = swss.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
 
         asic_routes_count = len(asic_db.get_keys(self.ASIC_RT_STR))
 
-        fvs = swsscommon.FieldValuePairs([("nexthop_group", "group1")])
+        fvs = swss.FieldValuePairs([("nexthop_group", "group1")])
         rt_ps.set("2.2.2.0/24", fvs)
 
         # check if route was propagated to ASIC DB
@@ -1359,12 +1381,12 @@ class TestNextHopGroup(object):
         self.flap_intf(1, 'down', dvs)
 
         # Create group2 pointing to the NH which's link is down
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.3'), ("ifname", "Ethernet4")])
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.3'), ("ifname", "Ethernet4")])
         nhg_ps.set("group2", fvs)
 
         # The group should be created.  To test this, add a route pointing to
         # it.  If the group exists, the route will be created as well.
-        fvs = swsscommon.FieldValuePairs([("nexthop_group", "group2")])
+        fvs = swss.FieldValuePairs([("nexthop_group", "group2")])
         rt_ps.set('2.2.4.0/24', fvs)
         asic_db.wait_for_n_keys(self.ASIC_RT_STR, asic_routes_count + 2)
 
@@ -1376,12 +1398,12 @@ class TestNextHopGroup(object):
         self.flap_intf(1, 'up', dvs)
 
         # Create group2 pointing to a NH that does not exist
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.61'), ("ifname", "Ethernet120")])
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.61'), ("ifname", "Ethernet120")])
         nhg_ps.set("group2", fvs)
 
         # The group should fail to be created.  To test this, we add a route
         # pointing to it.  The route should not be created.
-        fvs = swsscommon.FieldValuePairs([("nexthop_group", "group2")])
+        fvs = swss.FieldValuePairs([("nexthop_group", "group2")])
         rt_ps.set('2.2.4.0/24', fvs)
         asic_db.wait_for_n_keys(self.ASIC_RT_STR, asic_routes_count + 1)
 
@@ -1400,7 +1422,7 @@ class TestNextHopGroup(object):
 
         # Update the group to a multiple NH group - should fail as the group
         # is referenced
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
                                           ("ifname", "Ethernet0,Ethernet4")])
         nhg_ps.set("group1", fvs)
         time.sleep(1)
@@ -1409,7 +1431,7 @@ class TestNextHopGroup(object):
         # Update group1 to point to another NH - should fail as the group is
         # referenced
         nhgid = self.get_nhg_id('group1', dvs)
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.3'), ("ifname", "Ethernet4")])
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.3'), ("ifname", "Ethernet4")])
         nhg_ps.set("group1", fvs)
         assert nhgid == self.get_nhg_id('group1', dvs)
 
@@ -1424,7 +1446,7 @@ class TestNextHopGroup(object):
 
         # Update the group to a multiple NH group - should work as the group is
         # not referenced
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
                                           ("ifname", "Ethernet0,Ethernet4")])
         nhg_ps.set("group1", fvs)
         asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 1)
@@ -1441,13 +1463,13 @@ class TestNextHopGroup(object):
 
         # create next hop group in APPL DB
 
-        nhg_ps = swsscommon.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
+        nhg_ps = swss.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
 
         prev_nhg_keys = asic_db.get_keys(self.ASIC_NHG_STR)
         asic_nhgs_count = len(prev_nhg_keys)
         asic_nhgms_count = len(asic_db.get_keys(self.ASIC_NHGM_STR))
 
-        fvs = swsscommon.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3,10.0.0.5'),
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3,10.0.0.5'),
                                         ("ifname", "Ethernet0,Ethernet4,Ethernet8")])
         nhg_ps.set("group1", fvs)
 
@@ -1481,11 +1503,11 @@ class TestNextHopGroup(object):
 
         # create prefix route in APPL DB
 
-        rt_ps = swsscommon.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
+        rt_ps = swss.ProducerStateTable(app_db.db_connection, "ROUTE_TABLE")
 
         asic_routes_count = len(asic_db.get_keys(self.ASIC_RT_STR))
 
-        fvs = swsscommon.FieldValuePairs([("nexthop_group", "group1")])
+        fvs = swss.FieldValuePairs([("nexthop_group", "group1")])
         rt_ps.set("2.2.2.0/24", fvs)
 
         # check if route was propagated to ASIC DB
@@ -1501,11 +1523,11 @@ class TestNextHopGroup(object):
 
         # create label route in APPL DB pointing to the same next hop group
 
-        lrt_ps = swsscommon.ProducerStateTable(app_db.db_connection, "LABEL_ROUTE_TABLE")
+        lrt_ps = swss.ProducerStateTable(app_db.db_connection, "LABEL_ROUTE_TABLE")
 
         asic_insegs_count = len(asic_db.get_keys(self.ASIC_INSEG_STR))
 
-        fvs = swsscommon.FieldValuePairs([("nexthop_group", "group1")])
+        fvs = swss.FieldValuePairs([("nexthop_group", "group1")])
         lrt_ps.set("20", fvs)
 
         # check if label route was propagated to ASIC DB
@@ -1567,11 +1589,11 @@ class TestNextHopGroup(object):
 
         # create label route in APPL DBwith no properties (so just popping the label)
 
-        lrt_ps = swsscommon.ProducerStateTable(app_db.db_connection, "LABEL_ROUTE_TABLE")
+        lrt_ps = swss.ProducerStateTable(app_db.db_connection, "LABEL_ROUTE_TABLE")
 
         asic_insegs_count = len(asic_db.get_keys(self.ASIC_INSEG_STR))
 
-        fvs = swsscommon.FieldValuePairs([("ifname","")])
+        fvs = swss.FieldValuePairs([("ifname","")])
         lrt_ps.set("30", fvs)
 
         # check if label route was propagated to ASIC DB
@@ -1591,6 +1613,436 @@ class TestNextHopGroup(object):
 
         # Wait for route 20 to be removed
         asic_db.wait_for_n_keys(self.ASIC_INSEG_STR, asic_insegs_count)
+
+    def test_cbf_nhgorch(self, dvs, testlog):
+        for i in range(4):
+            self.config_intf(i, dvs)
+
+        app_db = dvs.get_app_db()
+        asic_db = dvs.get_asic_db()
+        cbf_nhg_ps = swss.ProducerStateTable(app_db.db_connection, "CLASS_BASED_NEXT_HOP_GROUP_TABLE")
+        nhg_ps = swss.ProducerStateTable(app_db.db_connection, "NEXT_HOP_GROUP_TABLE")
+
+        asic_nhgs_count = len(asic_db.get_keys(self.ASIC_NHG_STR))
+        asic_nhgms_count = len(asic_db.get_keys(self.ASIC_NHGM_STR))
+
+        # Create two non-CBF nhgs
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3,10.0.0.5'),
+                                        ("ifname", "Ethernet0,Ethernet4,Ethernet8")])
+        nhg_ps.set("group1", fvs)
+
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1,10.0.0.3'),
+                                            ('ifname', 'Ethernet0,Ethernet4')])
+        nhg_ps.set('group2', fvs)
+
+        # Wait for the groups to appear in ASIC DB
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
+
+        # Create a CBF NHG
+        fvs = swss.FieldValuePairs([('members', 'group1,group2'),
+                        ('class_map', '0:0,1:0,2:0,3:0,4:1,5:1,6:1,7:1')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+
+        # Check if the group makes it to ASIC DB
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 3)
+        nhgid = self.get_nhg_id('cbfgroup1', dvs)
+        assert(nhgid != None)
+        fvs = asic_db.get_entry(self.ASIC_NHG_STR, nhgid)
+        assert(fvs['SAI_NEXT_HOP_GROUP_ATTR_TYPE'] == 'SAI_NEXT_HOP_GROUP_TYPE_CLASS_BASED')
+
+        # Check if the next hop group members get created
+        asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 7)
+        nhgm_ids = self.get_nhgm_ids('cbfgroup1', dvs)
+        assert(len(nhgm_ids) == 2)
+        nhg_ids = dict(zip([self.get_nhg_id(x, dvs) for x in ['group1', 'group2']], ['0', '1']))
+        for nhgm_id in nhgm_ids:
+            fvs = asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id)
+            nh_id = fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID']
+            assert(fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_INDEX'] == nhg_ids[nh_id])
+            nhg_ids.pop(nh_id)
+
+        # Delete the CBF next hop group
+        cbf_nhg_ps._del('cbfgroup1')
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
+
+        # Test the data validation
+        fv_values = [
+            ('', '0:0,1:1'), # empty members
+            ('group1,group2', ''), # empty class map
+            ('group1,group1', '0:0,1:1'), # non-unique members
+            ('group1,group2', '0;0,1:1'), # ill-formed class map
+            ('group1,group2', '-1:0,1:1'), # negative FC value
+            ('group1,group2', '0:-1,1:1'), # negative indeex
+            ('group1,group2', '0:2,1:1'), # index out of range
+            ('group1,group2', '0:0,0:1'), # non-unique class map
+            ('group1,group2', 'asd:1,0:0'), # FC not integer
+            ('group1,group2', '0:asd,1:1'), # index not integer
+            ('group1;group2', '0:0,1:1'), # invalid members separator
+            ('group1,group2', '0:0;1:1'), # invalid class map separator
+        ]
+
+        for members, class_map in fv_values:
+            fvs = swss.FieldValuePairs([('members', members),
+                                            ('class_map', class_map)])
+            cbf_nhg_ps.set('cbfgroup1', fvs)
+            time.sleep(1)
+            assert(len(asic_db.get_keys(self.ASIC_NHG_STR)) == asic_nhgs_count + 2)
+
+        # Create a NHG with a single next hop
+        fvs = swss.FieldValuePairs([('nexthop', '10.0.0.1'),
+                                        ("ifname", "Ethernet0")])
+        nhg_ps.set("group3", fvs)
+        time.sleep(1)
+
+        # Create a CBF NHG
+        fvs = swss.FieldValuePairs([('members', 'group1,group3'),
+                                            ('class_map', '0:0,1:1')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 3)
+        asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 7)\
+
+        # Remove group1 while being referenced - should not work
+        nhg_ps._del('group1')
+        time.sleep(1)
+        assert(len(asic_db.get_keys(self.ASIC_NHG_STR)) == asic_nhgs_count + 3)
+
+        # Update the CBF NHG replacing group1 with group2
+        nhgm_ids = self.get_nhgm_ids('cbfgroup1', dvs)
+        fvs = swss.FieldValuePairs([('members', 'group2,group3'),
+                                            ('class_map', '0:0,1:1')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        asic_db.wait_for_deleted_keys(self.ASIC_NHGM_STR, nhgm_ids)
+        # group1 should be deleted and the updated members added
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
+        asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 4)
+
+        # Update the CBF NHG changing the order of the members
+        nhgm_ids = self.get_nhgm_ids('cbfgroup1', dvs)
+        fvs = swss.FieldValuePairs([('members', 'group3,group2'),
+                                            ('class_map', '0:0,1:1')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        asic_db.wait_for_deleted_keys(self.ASIC_NHGM_STR, nhgm_ids)
+        asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 4)
+
+        indexes = {
+            self.get_nhg_id('group3', dvs): '0',
+            self.get_nhg_id('group2', dvs): '1'
+        }
+        nhgm_ids = self.get_nhgm_ids('cbfgroup1', dvs)
+        for nhgm_id in nhgm_ids:
+            fvs = asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id)
+            nh_id = fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID']
+            assert(fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_INDEX'] == indexes[nh_id])
+            indexes.pop(nh_id)
+
+        # Update the CBF NHG class map
+        nhg_id = self.get_nhg_id('cbfgroup1', dvs)
+        old_map = asic_db.get_entry(self.ASIC_NHG_STR, nhg_id)['SAI_NEXT_HOP_GROUP_ATTR_FORWARDING_CLASS_TO_INDEX_MAP']
+        fvs = swss.FieldValuePairs([('members', 'group3,group2'),
+                                            ('class_map', '0:1,1:0')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        asic_db.wait_for_field_negative_match(self.ASIC_NHG_STR,
+                                            nhg_id,
+                                            {'SAI_NEXT_HOP_GROUP_ATTR_FORWARDING_CLASS_TO_INDEX_MAP': old_map})
+
+        # Create a route pointing to the CBF NHG
+        asic_rts_count = len(asic_db.get_keys(self.ASIC_RT_STR))
+        rt_ps = swss.ProducerStateTable(app_db.db_connection, swss.APP_ROUTE_TABLE_NAME)
+        fvs = swss.FieldValuePairs([('nexthop_group', 'cbfgroup1')])
+        rt_ps.set('2.2.2.0/24', fvs)
+        asic_db.wait_for_n_keys(self.ASIC_RT_STR, asic_rts_count + 1)
+
+        # Try deleting thee CBF NHG - should not work
+        cbf_nhg_ps._del('cbfgroup1')
+        time.sleep(1)
+        assert(len(asic_db.get_keys(self.ASIC_NHG_STR)) == asic_nhgs_count + 2)
+
+        # Delete the route - the CBF NHG should also get deleted
+        rt_ps._del('2.2.2.0/24')
+        asic_db.wait_for_n_keys(self.ASIC_RT_STR, asic_rts_count)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 1)
+        asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 2)
+
+        # Create a route pointing to a CBF NHG that does not yet exist
+        fvs = swss.FieldValuePairs([('nexthop_group', 'cbfgroup1')])
+        rt_ps.set('2.2.2.0/24', fvs)
+        time.sleep(1)
+        asic_db.wait_for_n_keys(self.ASIC_RT_STR, asic_rts_count)
+
+        # Create the CBF NHG
+        fvs = swss.FieldValuePairs([('members', 'group3,group2'),
+                                            ('class_map', '0:0,1:1')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
+        asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 4)
+        asic_db.wait_for_n_keys(self.ASIC_RT_STR, asic_rts_count + 1)
+
+        # Try deleting the CBF group
+        cbf_nhg_ps._del('cbfgroup1')
+        time.sleep(1)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
+
+        # Update the CBF group
+        nhgm_ids = self.get_nhgm_ids('cbfgroup1', dvs)
+        nhg_id = self.get_nhg_id('cbfgroup1', dvs)
+        old_map = asic_db.get_entry(self.ASIC_NHG_STR, nhg_id)['SAI_NEXT_HOP_GROUP_ATTR_FORWARDING_CLASS_TO_INDEX_MAP']
+        fvs = swss.FieldValuePairs([('members', 'group2'), ('class_map', '0:0')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        asic_db.wait_for_deleted_keys(self.ASIC_NHGM_STR, nhgm_ids)
+        asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count + 3)
+        nhgm_id = self.get_nhgm_ids('cbfgroup1', dvs)[0]
+        asic_db.wait_for_field_match(self.ASIC_NHGM_STR,
+                                     nhgm_id,
+                                     {'SAI_NEXT_HOP_GROUP_MEMBER_ATTR_INDEX': '0'})
+        asic_db.wait_for_field_negative_match(self.ASIC_NHG_STR,
+                                                nhg_id,
+            {'SAI_NEXT_HOP_GROUP_ATTR_FORWARDING_CLASS_TO_INDEX_MAP': old_map})
+
+        # Delete the route
+        rt_ps._del('2.2.2.0/24')
+        asic_db.wait_for_n_keys(self.ASIC_RT_STR, asic_rts_count)
+        # The update should have overwritten the delete for CBF NHG
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count + 2)
+
+        # Delete the NHGs
+        cbf_nhg_ps._del('cbfgroup1')
+        nhg_ps._del('group2')
+        nhg_ps._del('group3')
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count)
+        asic_db.wait_for_n_keys(self.ASIC_NHGM_STR, asic_nhgms_count)
+
+    def test_cbf_nhg_exhaust(self, dvs, testlog):
+        app_db = dvs.get_app_db()
+        asic_db = dvs.get_asic_db()
+        nhg_ps = swss.ProducerStateTable(app_db.db_connection, swss.APP_NEXT_HOP_GROUP_TABLE_NAME)
+        cbf_nhg_ps = swss.ProducerStateTable(app_db.db_connection, swss.APP_CLASS_BASED_NEXT_HOP_GROUP_TABLE_NAME)
+        rt_ps = swss.ProducerStateTable(app_db.db_connection, swss.APP_ROUTE_TABLE_NAME)
+
+        MAX_ECMP_COUNT = 512
+        MAX_PORT_COUNT = 10
+
+        r = 0
+        fmt = '{{0:0{}b}}'.format(MAX_PORT_COUNT)
+        asic_nhgs_count = len(asic_db.get_keys(self.ASIC_NHG_STR))
+        nhg_count = asic_nhgs_count
+        first_valid_nhg = nhg_count
+
+        def gen_nhg_fvs(binary):
+            nexthop = []
+            ifname = []
+
+            for i in range(MAX_PORT_COUNT):
+                if binary[i] == '1':
+                    nexthop.append(self.peer_ip(i))
+                    ifname.append(self.port_name(i))
+
+            nexthop = ','.join(nexthop)
+            ifname = ','.join(ifname)
+            fvs = swss.FieldValuePairs([("nexthop", nexthop), ("ifname", ifname)])
+
+            return fvs
+
+        def gen_nhg_index(nhg_number):
+            return "group{}".format(nhg_number)
+
+        def gen_valid_binary():
+            nonlocal r
+
+            while True:
+                r += 1
+                binary = fmt.format(r)
+                # We need at least 2 ports for a nexthop group
+                if binary.count('1') <= 1:
+                    continue
+                return binary
+
+        def create_temp_nhg():
+            nonlocal nhg_count
+
+            binary = gen_valid_binary()
+            nhg_fvs = gen_nhg_fvs(binary)
+            nhg_index = gen_nhg_index(nhg_count)
+            nhg_ps.set(nhg_index, nhg_fvs)
+            nhg_count += 1
+
+            return nhg_index, binary
+
+        def delete_nhg():
+            nonlocal first_valid_nhg
+
+            del_nhg_index = gen_nhg_index(first_valid_nhg)
+            del_nhg_id = asic_nhgs[del_nhg_index]
+
+            nhg_ps._del(del_nhg_index)
+            asic_nhgs.pop(del_nhg_index)
+            first_valid_nhg += 1
+
+            return del_nhg_id
+
+        def nhg_exists(nhg_index):
+            return self.get_nhg_id(nhg_index, dvs) is not None
+
+        # Create interfaces
+        for i in range(MAX_PORT_COUNT):
+            self.config_intf(i, dvs)
+
+        asic_nhgs = {}
+
+        # Add first batch of next hop groups to reach the NHG limit
+        while nhg_count < MAX_ECMP_COUNT:
+            r += 1
+            binary = fmt.format(r)
+            # We need at least 2 ports for a nexthop group
+            if binary.count('1') <= 1:
+                continue
+            nhg_fvs = gen_nhg_fvs(binary)
+            nhg_index = gen_nhg_index(nhg_count)
+            nhg_ps.set(nhg_index, nhg_fvs)
+
+            # Wait for the group to be added
+            asic_db.wait_for_n_keys(self.ASIC_NHG_STR, nhg_count + 1)
+
+            # Save the NHG index/ID pair
+            asic_nhgs[nhg_index] = self.get_nhg_id(nhg_index, dvs)
+
+            nhg_count += 1
+
+        # Create a CBF NHG group - it should fail
+        fvs = swss.FieldValuePairs([('members', 'group2'),
+                                    ('class_map', '0:0')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        time.sleep(1)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, MAX_ECMP_COUNT)
+
+        # Delete a NHG
+        del_nhg_id = delete_nhg()
+        asic_db.wait_for_deleted_entry(self.ASIC_NHG_STR, del_nhg_id)
+
+        # The CBF NHG should be created
+        assert(nhg_exists('cbfgroup1'))
+        nhg_id = self.get_nhg_id('cbfgroup1', dvs)
+
+        # Create a temporary NHG
+        nhg_index, _ = create_temp_nhg()
+
+        # Update the NHG to contain the temporary NHG
+        fvs = swss.FieldValuePairs([('members', '{}'.format(nhg_index)),
+                                    ('class_map', '0:0')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        time.sleep(1)
+        nhgm_id = self.get_nhgm_ids(None, dvs, nhg_id)[0]
+        fvs = asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id)
+        assert(fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID'] != self.get_nhg_id('group2', dvs))
+
+        # Delete a temporary NHG
+        nh_id = self.get_nhg_id(nhg_index, dvs)
+        del_nhg_id = delete_nhg()
+        asic_db.wait_for_deleted_entry(self.ASIC_NHG_STR, del_nhg_id)
+
+        # The NHG should be promoted and the CBF NHG member updated
+        asic_db.wait_for_field_negative_match(self.ASIC_NHGM_STR,
+                                                nhgm_id,
+                        {'SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID': nh_id})
+        asic_nhgs[nhg_index] = self.get_nhg_id(nhg_index, dvs)
+
+        # Create a couple more temporary NHGs
+        nhg_index1, _ = create_temp_nhg()
+        nhg_index2, _ = create_temp_nhg()
+
+        # Update the CBF NhG to contain both of them as well
+        fvs = swss.FieldValuePairs([('members', '{},{},{}'.format(nhg_index, nhg_index1, nhg_index2)),
+                                    ('class_map', '0:0,1:1,2:2')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+
+        # The previous CBF NHG member should be deleted
+        asic_db.wait_for_deleted_entry(self.ASIC_NHGM_STR, nhgm_id)
+        nhgm_ids = self.get_nhgm_ids(None, dvs, nhg_id)
+        values = {}
+        for nhgm_id in nhgm_ids:
+            fvs = asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id)
+            values[nhgm_id] = fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID']
+
+        # Update the class map of the group
+        old_map = asic_db.get_entry(self.ASIC_NHG_STR, nhg_id)['SAI_NEXT_HOP_GROUP_ATTR_FORWARDING_CLASS_TO_INDEX_MAP']
+        members = {nhgm_id: asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id) for nhgm_id in self.get_nhgm_ids(None, dvs, nhg_id)}
+        fvs = swss.FieldValuePairs([('members', '{},{},{}'.format(nhg_index, nhg_index1, nhg_index2)),
+                                    ('class_map', '0:1,1:0,2:2')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+
+        # Check that the map was updates, but the members weren't
+        asic_db.wait_for_field_negative_match(self.ASIC_NHG_STR,
+                                                nhg_id,
+                                                {'SAI_NEXT_HOP_GROUP_ATTR_FORWARDING_CLASS_TO_INDEX_MAP': old_map})
+        for nhgm_id in self.get_nhgm_ids(None, dvs, nhg_id):
+            assert(members[nhgm_id] == asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id))
+
+        # Gradually delete temporary NHGs and check that the NHG members are
+        # updated
+        for i in range(2):
+            # Delete a temporary NHG
+            del_nhg_id = delete_nhg()
+            asic_db.wait_for_deleted_entry(self.ASIC_NHG_STR, del_nhg_id)
+
+            # Check that one of the temporary NHGs has been updated
+            diff_count = 0
+            for nhgm_id, nh_id in values.items():
+                fvs = asic_db.get_entry(self.ASIC_NHGM_STR, nhgm_id)
+                if nh_id != fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID']:
+                    values[nhgm_id] = fvs['SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID']
+                    diff_count += 1
+            assert(diff_count == 1)
+
+        for index in [nhg_index1, nhg_index2]:
+            asic_nhgs[index] = self.get_nhg_id(index, dvs)
+
+        # Create a temporary NHG
+        nhg_index, binary = create_temp_nhg()
+
+        # Update the CBF NHG to point to the new NHG
+        nhgm_ids = self.get_nhgm_ids(None, dvs, nhg_id)
+        fvs = swss.FieldValuePairs([('members', nhg_index), ('class_map', '0:0')])
+        cbf_nhg_ps.set('cbfgroup1', fvs)
+        asic_db.wait_for_deleted_keys(self.ASIC_NHGM_STR, nhgm_ids)
+
+        # Update the temporary NHG to force using a new designated NH
+        new_binary = []
+
+        for i in range(len(binary)):
+            if binary[i] == '1':
+                new_binary.append('0')
+            else:
+                new_binary.append('1')
+
+        binary = ''.join(new_binary)
+        assert binary.count('1') > 1
+
+
+        nh_id = self.get_nhg_id(nhg_index, dvs)
+        nhg_fvs = gen_nhg_fvs(binary)
+        nhg_ps.set(nhg_index, nhg_fvs)
+
+        # The CBF NHG member's NH attribute should be updated
+        nhgm_id = self.get_nhgm_ids(None, dvs, nhg_id)[0]
+        asic_db.wait_for_field_negative_match(self.ASIC_NHGM_STR,
+                                                nhgm_id,
+                                                {'SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID': nh_id})
+
+        # Delete a NHG
+        del_nhg_id = delete_nhg()
+        asic_db.wait_for_deleted_entry(self.ASIC_NHG_STR, del_nhg_id)
+
+        # The temporary group should be promoted
+        nh_id = self.get_nhg_id(nhg_index, dvs)
+        asic_db.wait_for_field_match(self.ASIC_NHGM_STR,
+                                    nhgm_id,
+                                    {'SAI_NEXT_HOP_GROUP_MEMBER_ATTR_NEXT_HOP_ID': nh_id})
+        asic_nhgs[nhg_index] = nh_id
+
+        # Delete the NHGs
+        cbf_nhg_ps._del('cbfgroup1')
+        for k in asic_nhgs:
+            nhg_ps._del(k)
+        asic_db.wait_for_n_keys(self.ASIC_NHG_STR, asic_nhgs_count)
 
 # Add Dummy always-pass test at end as workaroud
 # for issue when Flaky fail on final test it invokes module tear-down before retrying
