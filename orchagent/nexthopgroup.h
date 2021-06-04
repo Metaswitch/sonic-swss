@@ -199,7 +199,7 @@ protected:
 
 /*
  * NhgCommon class representing the common templated base class between
- * NonCbfNhg and CbfNhg classes.
+ * Nhg and CbfNhg classes.
  */
 template <typename Key, typename MbrKey, typename Mbr>
 class NhgCommon : public NhgBase
@@ -405,9 +405,9 @@ protected:
 };
 
 /*
- * Structure describing a next hop group which NhgOrch owns.  Beside having a
- * next hop group, we also want to keep a ref count so we don't delete objects
- * that are still referenced.
+ * Structure describing a next hop group which NhgHandler owns.  Beside having
+ * a next hop group, we also want to keep a ref count so we don't delete
+ * objects that are still referenced.
  */
 template <typename NhgClass>
 struct NhgEntry
@@ -427,7 +427,7 @@ struct NhgEntry
  * Class providing the common functionality shared by all NhgOrch classes.
  */
 template <typename NhgClass>
-class NhgOrchCommon
+class NhgHandlerCommon
 {
 public:
     /*

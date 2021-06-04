@@ -1,4 +1,4 @@
-#include "noncbfnhgorch.h"
+#include "nhghandler.h"
 #include "nhgorch.h"
 #include "neighorch.h"
 #include "crmorch.h"
@@ -25,7 +25,7 @@ extern sai_next_hop_api_t*         sai_next_hop_api;
  *
  * Returns:     Nothing.
  */
-void NonCbfNhgOrch::doTask(Consumer& consumer)
+void NhgHandler::doTask(Consumer& consumer)
 {
     SWSS_LOG_ENTER();
 
@@ -92,7 +92,7 @@ void NonCbfNhgOrch::doTask(Consumer& consumer)
                 * actual group when there are enough resources.
                 */
                 if ((nhg_key.getSize() > 1) &&
-                    (NonCbfNhg::getSyncedCount() >= NhgOrch::getMaxNhgCount()))
+                    (Nhg::getSyncedCount() >= NhgOrch::getMaxNhgCount()))
                 {
                     SWSS_LOG_WARN("Next hop group count reached it's limit.");
 
@@ -105,7 +105,7 @@ void NonCbfNhgOrch::doTask(Consumer& consumer)
                         {
                             SWSS_LOG_INFO("Temporary NHG successfully synced");
                             m_syncedNhgs.emplace(index,
-                                        NhgEntry<NonCbfNhg>(std::move(nhg)));
+                                        NhgEntry<Nhg>(std::move(nhg)));
                         }
                         else
                         {
@@ -131,14 +131,14 @@ void NonCbfNhgOrch::doTask(Consumer& consumer)
                 }
                 else
                 {
-                    auto nhg = NonCbfNhg(nhg_key);
+                    auto nhg = Nhg(nhg_key);
                     success = nhg.sync();
 
                     if (success)
                     {
                         SWSS_LOG_INFO("NHG successfully synced");
                         m_syncedNhgs.emplace(index,
-                                        NhgEntry<NonCbfNhg>(std::move(nhg)));
+                                        NhgEntry<Nhg>(std::move(nhg)));
                     }
                 }
             }
@@ -175,8 +175,7 @@ void NonCbfNhgOrch::doTask(Consumer& consumer)
                  */
                 else if (nhg.isTemp() &&
                          (nhg_key.getSize() > 1) &&
-                         (NonCbfNhg::getSyncedCount() >=
-                                                    NhgOrch::getMaxNhgCount()))
+                         (Nhg::getSyncedCount() >= NhgOrch::getMaxNhgCount()))
                 {
                     /*
                      * If the group was updated in such way that the previously
@@ -316,7 +315,7 @@ void NonCbfNhgOrch::doTask(Consumer& consumer)
  *              containing groups;
  *              false, otherwise.
  */
-bool NonCbfNhgOrch::validateNextHop(const NextHopKey& nh_key)
+bool NhgHandler::validateNextHop(const NextHopKey& nh_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Validating next hop %s", nh_key.to_string().c_str());
@@ -365,7 +364,7 @@ bool NonCbfNhgOrch::validateNextHop(const NextHopKey& nh_key)
  *              containing groups;
  *              false, otherwise.
  */
-bool NonCbfNhgOrch::invalidateNextHop(const NextHopKey& nh_key)
+bool NhgHandler::invalidateNextHop(const NextHopKey& nh_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Invalidating next hop %s", nh_key.to_string().c_str());
@@ -574,9 +573,7 @@ WeightedNhgMember::~WeightedNhgMember()
  *
  * Returns:     Nothing.
  */
-NonCbfNhg::NonCbfNhg(const NextHopGroupKey& key) :
-    NhgCommon(key),
-    m_is_temp(false)
+Nhg::Nhg(const NextHopGroupKey& key) : NhgCommon(key), m_is_temp(false)
 {
     SWSS_LOG_ENTER();
 
@@ -596,7 +593,7 @@ NonCbfNhg::NonCbfNhg(const NextHopGroupKey& key) :
  *
  * Returns:     Referene to this object.
  */
-NonCbfNhg& NonCbfNhg::operator=(NonCbfNhg&& nhg)
+Nhg& Nhg::operator=(Nhg&& nhg)
 {
     SWSS_LOG_ENTER();
 
@@ -620,7 +617,7 @@ NonCbfNhg& NonCbfNhg::operator=(NonCbfNhg&& nhg)
  * Returns:     true, if the operation was successful;
  *              false, otherwise.
  */
-bool NonCbfNhg::sync()
+bool Nhg::sync()
 {
     SWSS_LOG_ENTER();
 
@@ -715,7 +712,7 @@ bool NonCbfNhg::sync()
  *
  * Returns:     The created temporary next hop group.
  */
-NonCbfNhg NonCbfNhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
+Nhg NhgHandler::createTempNhg(const NextHopGroupKey& nhg_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Syncing temporary group %s", nhg_key.to_string().c_str());
@@ -754,7 +751,7 @@ NonCbfNhg NonCbfNhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
     /* Create the temporary group. */
     SWSS_LOG_INFO("Using next hop %s for the temporary NHG",
                     it->to_string().c_str());
-    NonCbfNhg nhg(NextHopGroupKey(it->to_string()));
+    Nhg nhg(NextHopGroupKey(it->to_string()));
     nhg.setTemp(true);
 
     return nhg;
@@ -771,7 +768,7 @@ NonCbfNhg NonCbfNhgOrch::createTempNhg(const NextHopGroupKey& nhg_key)
  * Returns:     true, if the operation was successful;
  *              false, otherwise
  */
-bool NonCbfNhg::desync()
+bool Nhg::desync()
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Desyncing non CBF group %s", to_string().c_str());
@@ -802,7 +799,7 @@ bool NonCbfNhg::desync()
  * Returns:     true, if the members were added succesfully;
  *              false, otherwise.
  */
-bool NonCbfNhg::syncMembers(const std::set<NextHopKey>& nh_keys)
+bool Nhg::syncMembers(const std::set<NextHopKey>& nh_keys)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Adding next hop group %s members",
@@ -909,7 +906,7 @@ bool NonCbfNhg::syncMembers(const std::set<NextHopKey>& nh_keys)
  * Returns:     true, if the operation was successful;
  *              false, otherwise.
  */
-bool NonCbfNhg::update(const NextHopGroupKey& nhg_key)
+bool Nhg::update(const NextHopGroupKey& nhg_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Update group %s with %s",
@@ -932,7 +929,7 @@ bool NonCbfNhg::update(const NextHopGroupKey& nhg_key)
         SWSS_LOG_INFO("Updating group without preserving it's SAI ID");
 
         bool was_synced = isSynced();
-        *this = NonCbfNhg(nhg_key);
+        *this = Nhg(nhg_key);
 
         /* Sync the group only if it was synced before. */
         return (was_synced ? sync() : true);
@@ -1029,7 +1026,7 @@ bool NonCbfNhg::update(const NextHopGroupKey& nhg_key)
  *
  * Returns:     The attributes vector for the given next hop.
  */
-vector<sai_attribute_t> NonCbfNhg::createNhgmAttrs(
+vector<sai_attribute_t> Nhg::createNhgmAttrs(
                                         const WeightedNhgMember& nhgm) const
 {
     SWSS_LOG_ENTER();
@@ -1064,7 +1061,7 @@ vector<sai_attribute_t> NonCbfNhg::createNhgmAttrs(
  * Returns:     true, if the operation was successful;
  *              false, otherwise.
  */
-bool NonCbfNhg::validateNextHop(const NextHopKey& nh_key)
+bool Nhg::validateNextHop(const NextHopKey& nh_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Validate NH %s in group %s",
@@ -1094,7 +1091,7 @@ bool NonCbfNhg::validateNextHop(const NextHopKey& nh_key)
  * Returns:     true, if the operation was successful;
  *              false, otherwise.
  */
-bool NonCbfNhg::invalidateNextHop(const NextHopKey& nh_key)
+bool Nhg::invalidateNextHop(const NextHopKey& nh_key)
 {
     SWSS_LOG_ENTER();
     SWSS_LOG_INFO("Invalidate NH %s in group %s",
