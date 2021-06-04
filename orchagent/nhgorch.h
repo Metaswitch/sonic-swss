@@ -1,7 +1,7 @@
 #pragma once
 
-#include "cbfnhgorch.h"
-#include "noncbfnhgorch.h"
+#include "cbfnhghandler.h"
+#include "nhghandler.h"
 #include "switchorch.h"
 #include "vector"
 #include "portsorch.h"
@@ -111,7 +111,7 @@ public:
     inline bool hasNhg(const string &index) const
     {
         SWSS_LOG_ENTER();
-        return nonCbfNhgOrch.hasNhg(index) || cbfNhgOrch.hasNhg(index);
+        return nhgHandler.hasNhg(index) || cbfNhgHandler.hasNhg(index);
     }
 
     /*
@@ -123,11 +123,11 @@ public:
 
         try
         {
-            return nonCbfNhgOrch.getNhg(index);
+            return nhgHandler.getNhg(index);
         }
         catch(const std::out_of_range &e)
         {
-            return cbfNhgOrch.getNhg(index);
+            return cbfNhgHandler.getNhg(index);
         }
     }
 
@@ -139,13 +139,13 @@ public:
     {
         SWSS_LOG_ENTER();
 
-        if (nonCbfNhgOrch.hasNhg(index))
+        if (nhgHandler.hasNhg(index))
         {
-            nonCbfNhgOrch.incNhgRefCount(index);
+            nhgHandler.incNhgRefCount(index);
         }
-        else if (cbfNhgOrch.hasNhg(index))
+        else if (cbfNhgHandler.hasNhg(index))
         {
-            cbfNhgOrch.incNhgRefCount(index);
+            cbfNhgHandler.incNhgRefCount(index);
         }
         else
         {
@@ -161,13 +161,13 @@ public:
     {
         SWSS_LOG_ENTER();
 
-        if (nonCbfNhgOrch.hasNhg(index))
+        if (nhgHandler.hasNhg(index))
         {
-            nonCbfNhgOrch.decNhgRefCount(index);
+            nhgHandler.decNhgRefCount(index);
         }
-        else if (cbfNhgOrch.hasNhg(index))
+        else if (cbfNhgHandler.hasNhg(index))
         {
-            cbfNhgOrch.decNhgRefCount(index);
+            cbfNhgHandler.decNhgRefCount(index);
         }
         else
         {
@@ -188,19 +188,19 @@ public:
 
         if (table_name == APP_NEXT_HOP_GROUP_TABLE_NAME)
         {
-            nonCbfNhgOrch.doTask(consumer);
+            nhgHandler.doTask(consumer);
         }
         else if (table_name == APP_CLASS_BASED_NEXT_HOP_GROUP_TABLE_NAME)
         {
-            cbfNhgOrch.doTask(consumer);
+            cbfNhgHandler.doTask(consumer);
         }
     }
 
     /*
-     * Orchs dealing with the (non) CBF operations.
+     * Handlers dealing with the (non) CBF operations.
      */
-    NonCbfNhgOrch nonCbfNhgOrch;
-    CbfNhgOrch cbfNhgOrch;
+    NhgHandler nhgHandler;
+    CbfNhgHandler cbfNhgHandler;
 private:
 
     /*

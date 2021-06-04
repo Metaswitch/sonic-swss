@@ -1,4 +1,4 @@
-#include "cbfnhgorch.h"
+#include "cbfnhghandler.h"
 #include "crmorch.h"
 #include "bulker.h"
 #include "tokenize.h"
@@ -23,7 +23,7 @@ extern sai_next_hop_group_api_t* sai_next_hop_group_api;
  *
  * Returns:     Nothing.
  */
-void CbfNhgOrch::doTask(Consumer& consumer)
+void CbfNhgHandler::doTask(Consumer& consumer)
 {
     SWSS_LOG_ENTER();
 
@@ -227,7 +227,7 @@ void CbfNhgOrch::doTask(Consumer& consumer)
  *          - the third element is an unordered map of the class map
  */
 tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
-    CbfNhgOrch::validateData(const string &members, const string &class_map)
+    CbfNhgHandler::validateData(const string &members, const string &class_map)
 {
     SWSS_LOG_ENTER();
 
@@ -346,10 +346,10 @@ tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
  *
  * Returns: Reference to the non CBF NHG.
  */
-const NonCbfNhg& CbfNhgOrch::getNonCbfNhg(const string &index)
+const Nhg& CbfNhgHandler::getNonCbfNhg(const string &index)
 {
     SWSS_LOG_ENTER();
-    return gNhgOrch->nonCbfNhgOrch.getNhg(index);
+    return gNhgOrch->nhgHandler.getNhg(index);
 }
 
 /*
@@ -746,14 +746,14 @@ bool CbfNhg::syncMembers(const set<string> &members)
         /*
          * Check if the group exists in NhgOrch.
          */
-        if (!gNhgOrch->nonCbfNhgOrch.hasNhg(key))
+        if (!gNhgOrch->nhgHandler.hasNhg(key))
         {
             SWSS_LOG_ERROR("Next hop group %s in CBF next hop group %s does "
                             "not exist", key.c_str(), m_key.c_str());
             return false;
         }
 
-        const auto &nhg = CbfNhgOrch::getNonCbfNhg(key);
+        const auto &nhg = CbfNhgHandler::getNonCbfNhg(key);
 
         /*
          * Check if the group is synced.
@@ -910,7 +910,7 @@ void CbfNhgMember::sync(sai_object_id_t gm_id)
     SWSS_LOG_ENTER();
 
     NhgMember::sync(gm_id);
-    gNhgOrch->nonCbfNhgOrch.incNhgRefCount(m_key);
+    gNhgOrch->nhgHandler.incNhgRefCount(m_key);
 }
 
 /*
@@ -964,7 +964,7 @@ void CbfNhgMember::desync()
     SWSS_LOG_ENTER();
 
     NhgMember::desync();
-    gNhgOrch->nonCbfNhgOrch.decNhgRefCount(m_key);
+    gNhgOrch->nhgHandler.decNhgRefCount(m_key);
 }
 
 /*
@@ -979,11 +979,11 @@ sai_object_id_t CbfNhgMember::getNhgId() const
 {
     SWSS_LOG_ENTER();
 
-    if (!gNhgOrch->nonCbfNhgOrch.hasNhg(m_key))
+    if (!gNhgOrch->nhgHandler.hasNhg(m_key))
     {
         SWSS_LOG_INFO("NHG %s does not exist", to_string().c_str());
         return SAI_NULL_OBJECT_ID;
     }
 
-    return CbfNhgOrch::getNonCbfNhg(m_key).getId();
+    return CbfNhgHandler::getNonCbfNhg(m_key).getId();
 }

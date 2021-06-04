@@ -51,23 +51,21 @@ private:
 };
 
 /*
- * NonCbfNhg class representing a next hop group object.
+ * Nhg class representing a next hop group object.
  */
-class NonCbfNhg : public NhgCommon<NextHopGroupKey,
-                                        NextHopKey,
-                                        WeightedNhgMember>
+class Nhg : public NhgCommon<NextHopGroupKey, NextHopKey, WeightedNhgMember>
 {
 public:
     /* Constructors. */
-    explicit NonCbfNhg(const NextHopGroupKey& key);
+    explicit Nhg(const NextHopGroupKey& key);
 
-    NonCbfNhg(NonCbfNhg&& nhg) :
+    Nhg(Nhg&& nhg) :
         NhgCommon(move(nhg)), m_is_temp(nhg.m_is_temp)
     { SWSS_LOG_ENTER(); }
 
-    NonCbfNhg& operator=(NonCbfNhg&& nhg);
+    Nhg& operator=(Nhg&& nhg);
 
-    ~NonCbfNhg() { SWSS_LOG_ENTER(); desync(); }
+    ~Nhg() { SWSS_LOG_ENTER(); desync(); }
 
     /* Sync the group, creating the group's and members SAI IDs. */
     bool sync() override;
@@ -115,11 +113,11 @@ private:
  * Next Hop Group Orchestrator class that handles NEXT_HOP_GROUP_TABLE
  * updates.
  */
-class NonCbfNhgOrch : public NhgOrchCommon<NonCbfNhg>
+class NhgHandler : public NhgHandlerCommon<Nhg>
 {
 public:
     /* Add a temporary next hop group when resources are exhausted. */
-    NonCbfNhg createTempNhg(const NextHopGroupKey& nhg_key);
+    Nhg createTempNhg(const NextHopGroupKey& nhg_key);
 
     /* Validate / Invalidate a next hop. */
     bool validateNextHop(const NextHopKey& nh_key);
