@@ -1,7 +1,7 @@
 #pragma once
 
 #include "nexthopgroup.h"
-#include "noncbfnhgorch.h"
+#include "nhghandler.h"
 
 using namespace std;
 
@@ -127,7 +127,7 @@ private:
     bool hasSameMembers(const vector<string> &members) const;
 };
 
-class CbfNhgOrch : public NhgOrchCommon<CbfNhg>
+class CbfNhgHandler : public NhgHandlerCommon<CbfNhg>
 {
 public:
     void doTask(Consumer &consumer);
@@ -135,7 +135,7 @@ public:
     /*
      * Get the non CBF NHG with the given index.
      */
-    static inline const NonCbfNhg& getNonCbfNhg(const string &index);
+    static inline const Nhg& getNonCbfNhg(const string &index);
 
 private:
     static tuple<bool, vector<string>, unordered_map<uint8_t, uint8_t>>
