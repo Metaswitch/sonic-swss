@@ -42,7 +42,6 @@ SwitchOrch *gSwitchOrch;
 Directory<Orch*> gDirectory;
 NatOrch *gNatOrch;
 MACsecOrch *gMacsecOrch;
-CbfOrch *gCbfOrch;
 
 bool gIsNatSupported = false;
 
@@ -186,7 +185,9 @@ bool OrchDaemon::init()
         CFG_WRED_PROFILE_TABLE_NAME,
         CFG_TC_TO_PRIORITY_GROUP_MAP_TABLE_NAME,
         CFG_PFC_PRIORITY_TO_PRIORITY_GROUP_MAP_TABLE_NAME,
-        CFG_PFC_PRIORITY_TO_QUEUE_MAP_TABLE_NAME
+        CFG_PFC_PRIORITY_TO_QUEUE_MAP_TABLE_NAME,
+        CFG_DSCP_TO_FC_MAP_TABLE_NAME,
+        CFG_EXP_TO_FC_MAP_TABLE_NAME
     };
     QosOrch *qos_orch = new QosOrch(m_configDb, qos_tables);
 
@@ -283,10 +284,6 @@ bool OrchDaemon::init()
 
     gMacsecOrch = new MACsecOrch(m_applDb, m_stateDb, macsec_app_tables, gPortsOrch);
 
-    vector<string> cbf_tables = { CFG_DSCP_TO_FC_MAP_TABLE_NAME,
-                                  CFG_EXP_TO_FC_MAP_TABLE_NAME };
-    gCbfOrch = new CbfOrch(m_configDb, cbf_tables);
-
     /*
      * The order of the orch list is important for state restore of warm start and
      * the queued processing in m_toSync map after gPortsOrch->allPortsReady() is set.
@@ -295,7 +292,7 @@ bool OrchDaemon::init()
      * when iterating ConsumerMap. This is ensured implicitly by the order of keys in ordered map.
      * For cases when Orch has to process tables in specific order, like PortsOrch during warm start, it has to override Orch::doTask()
      */
-    m_orchList = { gSwitchOrch, gCrmOrch, gPortsOrch, gBufferOrch, gIntfsOrch, gNeighOrch, gNhgOrch, gRouteOrch, copp_orch, tunnel_decap_orch, qos_orch, wm_orch, policer_orch, sflow_orch, debug_counter_orch, gMacsecOrch, gCbfOrch};
+    m_orchList = { gSwitchOrch, gCrmOrch, gPortsOrch, gBufferOrch, gIntfsOrch, gNeighOrch, gNhgOrch, gRouteOrch, copp_orch, tunnel_decap_orch, qos_orch, wm_orch, policer_orch, sflow_orch, debug_counter_orch, gMacsecOrch};
 
     bool initialize_dtel = false;
     if (platform == BFN_PLATFORM_SUBSTRING || platform == VS_PLATFORM_SUBSTRING)

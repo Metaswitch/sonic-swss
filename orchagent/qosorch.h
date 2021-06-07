@@ -119,6 +119,20 @@ public:
     sai_object_id_t addQosItem(const vector<sai_attribute_t> &attributes);
 };
 
+class DscpToFcMapHandler : public QosMapHandler
+{
+public:
+    bool convertFieldValuesToAttributes(KeyOpFieldsValuesTuple &tuple, vector<sai_attribute_t> &attributes) override;
+    sai_object_id_t addQosItem(const vector<sai_attribute_t> &attributes) override;
+};
+
+class ExpToFcMapHandler : public QosMapHandler
+{
+public:
+    bool convertFieldValuesToAttributes(KeyOpFieldsValuesTuple &tuple, vector<sai_attribute_t> &attributes) override;
+    sai_object_id_t addQosItem(const vector<sai_attribute_t> &attributes) override;
+};
+
 class QosOrch : public Orch
 {
 public:
@@ -146,6 +160,8 @@ private:
     task_process_status handleSchedulerTable(Consumer& consumer);
     task_process_status handleQueueTable(Consumer& consumer);
     task_process_status handleWredProfileTable(Consumer& consumer);
+    task_process_status handleDscpToFcTable(Consumer& consumer);
+    task_process_status handleExpToFcTable(Consumer& consumer);
 
     sai_object_id_t getSchedulerGroup(const Port &port, const sai_object_id_t queue_id);
 
